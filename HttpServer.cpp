@@ -12,6 +12,7 @@
 
 #include "HttpServer.hpp"
 #include "HttpAgent.hpp"
+#include "utils.hpp"
 #include <stdexcept>
 #include <string>
 #include <strings.h>
@@ -171,6 +172,54 @@ Location& HttpServer::getLocation(std::string& path)
 
     return locations[locations.size() - 1];
 }
+
+bool matchLocation(const std::string& path, const std::string& src)
+{
+    if (!starts_with(path, src))
+        return false;
+
+    if (path.size() == src.size())
+        return true;
+
+    return path[src.size()] == '/';
+}
+
+std::string HttpServer::getRoutedPath(const std::string& requestedPath) const
+    {
+        if (locations.empty())
+            throw std::runtime_error("Server should have at least 1 location");
+
+        std::vector<Location>::const_iterator matched = locations.end();
+        std::size_t bestLen = 0;
+
+        // Longest prefix match
+        for (std::vector<Location>::const_iterator it = locations.begin();
+             it != locations.end(); ++it)
+        {
+            const std::string& src = it->getSource();
+
+            if (matchLocation(requestedPath, src) && src.size() > bestLen)
+            {
+                matched = it;
+                bestLen = src.size();
+            }
+        }
+
+        if (matched == locations.end())
+            return requestedPath;
+
+        // Build filesystem path safely
+        std::string suffix = requestedPath.substr(matched->getSource().size());
+        std::string root = matched->getRoot();
+
+        if (!root.empty() && root[root.size() - 1] == '/' &&
+            !suffix.empty() && suffix[0] == '/')
+        {
+            root.erase(root.size() - 1);
+        }
+
+        return root + suffix;
+    }
 
 void HttpServer::normalize()
 {

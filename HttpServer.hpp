@@ -91,6 +91,7 @@ class HttpServer : public HttpAgent
         const std::string&  getErrorPage(int code);
         void                addLocation(Location& location);
         Location&           getLocation(std::string& path);
+        std::string         getRoutedPath(const std::string& requestedPath) const;
 
         void                setToEppoll(int epoll_fd, struct epoll_event &events);
         void                normalize();

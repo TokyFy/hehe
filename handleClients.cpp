@@ -141,10 +141,10 @@ void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
     (void)(clients);
     (void)(fd);
 
+    std::cout << "INDEX OF ** " << client.request.path << " * " <<client.server_ptr->getRoutedPath("/public/foo") << "\e[0m" << std::endl;
+
     if(mime(client.request.path) == FOLDER)
     {
-        std::cout << "\e[1;31mClient: FOLDER REQUEST " << client.request.path << "\e[0m" << std::endl;
-
         std::string indexContent = "";
         if (client.server_ptr)
         {
