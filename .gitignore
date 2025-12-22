@@ -1,0 +1,7 @@
+*.o
+*/*.o
+*.idea
+*/*.idea
+*/.clangd
+*.mp4
+webserv
