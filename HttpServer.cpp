@@ -178,48 +178,49 @@ bool matchLocation(const std::string& path, const std::string& src)
     if (!starts_with(path, src))
         return false;
 
-    if (path.size() == src.size())
-        return true;
-
     return path[src.size()] == '/';
 }
 
 std::string HttpServer::getRoutedPath(const std::string& requestedPath) const
+{
+    if (locations.empty())
+        throw std::runtime_error("Server should have at least 1 location");
+
+    // Default to LAST location
+    std::vector<Location>::const_iterator matched = locations.end();
+    --matched;
+
+    // Longest prefix match
+    for (std::vector<Location>::const_iterator it = locations.begin();
+         it != locations.end(); ++it)
     {
-        if (locations.empty())
-            throw std::runtime_error("Server should have at least 1 location");
+        const std::string& src = it->getSource();
 
-        std::vector<Location>::const_iterator matched = locations.end();
-        std::size_t bestLen = 0;
-
-        // Longest prefix match
-        for (std::vector<Location>::const_iterator it = locations.begin();
-             it != locations.end(); ++it)
+        if (starts_with(requestedPath, src))
         {
-            const std::string& src = it->getSource();
-
-            if (matchLocation(requestedPath, src) && src.size() > bestLen)
-            {
-                matched = it;
-                bestLen = src.size();
-            }
+            matched = it;
+            break;
         }
-
-        if (matched == locations.end())
-            return requestedPath;
-
-        // Build filesystem path safely
-        std::string suffix = requestedPath.substr(matched->getSource().size());
-        std::string root = matched->getRoot();
-
-        if (!root.empty() && root[root.size() - 1] == '/' &&
-            !suffix.empty() && suffix[0] == '/')
-        {
-            root.erase(root.size() - 1);
-        }
-
-        return root + suffix;
     }
+
+    const std::string& src = matched->getSource();
+    std::string suffix;
+
+    if (requestedPath.size() >= src.size())
+        suffix = requestedPath.substr(src.size());
+
+    std::string root = matched->getRoot();
+
+    // Avoid double '/'
+    if (!root.empty() && root[root.size() - 1] == '/' &&
+        !suffix.empty() && suffix[0] == '/')
+    {
+        root.erase(root.size() - 1);
+    }
+
+    return root + suffix;
+}
+
 
 void HttpServer::normalize()
 {
