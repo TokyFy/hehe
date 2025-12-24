@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "handleClients.hpp"
+#include <iterator>
 #include <unistd.h>
 
 HttpServer *findServer(std::vector<HttpServer> &servers, int server_fd)
@@ -33,13 +34,10 @@ void    acceptClient(int &fd, int &epoll_fd, std::map<int, Client> &clients, Htt
     clients.insert(std::make_pair(client_fd, client));
     events.events = EPOLLIN;
     events.data.fd = client_fd;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &events))
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &events) == -1)
     {
-        std::cerr << "Failed to add fd." << std::endl;
         return;
     }
-    else
-        std::cout << "added a new client with fd " << client_fd << std::endl;
 }
 
 void    checkTimeout(std::map<int , Client> &clients, int epoll_fd)
@@ -145,8 +143,6 @@ void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
         }
         else
              std::string res = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nError";
-
-        std::cout << "INDEX CONTENT: " << indexContent << std::endl;
         send(client.client_fd, indexContent.c_str(), indexContent.size() , MSG_NOSIGNAL);
         client.response.full = true;
         return;
@@ -159,14 +155,12 @@ void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
     client.response.mimeType = client.response.getRightMimeType(client.request.path);
     if (client.response.statusCode != 200 && client.response.statusCode != 201)
     {
-        std::cout << "ERROR PAGE" << std::endl;
         client.response.method = "GET";
         client.request.path = "./www/error.html";
         client.response.mimeType = "html";
     }
     if ((!(client.response.file.is_open())) && (client.response.method != "DELETE"))
         client.response.openFile(client.request.path);
-    std::cout << "ETO" << std::endl;
     std::string response;
     if (client.request.methodName == "POST")
     {
@@ -222,7 +216,7 @@ void multiple(std::vector<HttpServer> &servers)
         }
         else
         {
-            std::cerr << "\e[1;33mClient Number: \e[0m" << clients.size() << std::endl;
+            std::cerr << "\e[90m-------------------------------------------------------- \e[0m" << std::endl;
             for (int i = 0; i < count; i++)
             {
                 int fd = all_events[i].data.fd;
@@ -269,9 +263,9 @@ void multiple(std::vector<HttpServer> &servers)
                                 std::string root = location.getRoot();
                                 client.setServerPtr(client.server_ptr);
                                 client.checkPath();
-
-                                std::cout << "** REQUEST PATH " << client.request.path << std::endl;
                                 client.request.fullHeader = true;
+
+                                std::cout << client.request.methodName << " " << client.request.path << std::endl; 
                             }
                             else
                                 continue;

@@ -106,8 +106,12 @@ void   HttpRequest::parseHeaders(std::string rest)
     }
     fillPair(rest);
     std::map<std::string, std::string>::iterator it;
+
+    /*
+     * PRINTINT REQUEST
     for (it = headers.begin(); it != headers.end(); ++it)
         std::cout << it->first << " +:+ " << it->second << std::endl;
+    */
 }
 
 int    HttpRequest::parse(std::string request)
@@ -158,7 +162,6 @@ void    HttpRequest::checkMultipart(void)
     }
     if (boundPos != std::string::npos)
         boundary = "--" + content.substr(boundPos + bound.size());
-    std::cout << "\e[1;36mTHE TYPE : " << type << " | THE BOUNDARY: " << boundary << "\e[0m" << std::endl;
 }
 
 std::string HttpRequest::getType(void)

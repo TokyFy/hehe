@@ -46,7 +46,7 @@ int     Client::checkHead(void)
     int         code;
 
     response.statusCode = 200;
-    std::cout << "Client entry : " << entry << std::endl;
+    // std::cout << "Client entry : " << entry << std::endl;
     size_t pos = entry.find("\r");
     head = entry.substr(0, pos);
     code = request.parseHead(head, response);
@@ -151,9 +151,6 @@ void Client::setServerPtr(HttpServer* ptr)
     server_ptr = ptr;
 
     std::string rpath = ptr->getRoutedPath(request.path);
-    
-    std::cout << "RESOLE :" << request.path << "->" << rpath << std::endl; 
-
     request.path = "." + rpath;
 }
 

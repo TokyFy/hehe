@@ -123,7 +123,6 @@ std::string HttpResponse::getPairs(HttpRequest request)
     }
     std::string length;
     // connection = "Connection: " + request.getPair("Connection") + "\r\n";
-    std::cout << "REQUEST PATH: " << request.path << "------" << std::endl;
     contentType = "Content-type: " + getContentType() + "\r\n";
     length = "Content-Length: " + intToString(contentLength) + "\r\n";
     return (connection + contentType + length);
@@ -158,7 +157,7 @@ std::string HttpResponse::getBody(void)
 std::string HttpResponse::createResponse(HttpRequest request)
 {
     std::string ret = createHeader() + getPairs(request) + "\r\n";
-    std::cout << "HEADER *****" << ret << "*****HEADER" << std::endl;
+    // std::cout << "HEADER *****" << ret << "*****HEADER" << std::endl;
     header = true;
     return (ret);
 }
