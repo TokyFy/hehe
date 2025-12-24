@@ -157,7 +157,6 @@ std::string HttpResponse::getBody(void)
 std::string HttpResponse::createResponse(HttpRequest request)
 {
     std::string ret = createHeader() + getPairs(request) + "\r\n";
-    // std::cout << "HEADER *****" << ret << "*****HEADER" << std::endl;
     header = true;
     return (ret);
 }
