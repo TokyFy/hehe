@@ -28,10 +28,10 @@ class HttpRequest;
 class Client
 {
     public:
-        int     server_fd;
-        HttpServer * server_ptr;
-        int     client_fd;
-        bool    sent;
+        int             server_fd;
+        HttpServer *    server_ptr;
+        int             client_fd;
+        bool            sent;
         std::string     entry;
         unsigned long   time;
         HttpRequest     request;
@@ -47,6 +47,7 @@ class Client
         void    assignFds(int fd, int server);
         void    reset(void);
         int     checkPath(void);
+        void    setServerPtr(HttpServer* ptr);
 };
 
 #endif

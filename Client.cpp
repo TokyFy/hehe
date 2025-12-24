@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "Client.hpp"
+#include <string>
 
 Client::Client(void)
 {
@@ -122,7 +123,6 @@ int Client::checkPath(void)
     {
         if (access(path.c_str(), F_OK))
         {
-            std::cout << "ATO" << std::endl;
             if (request.methodName == "POST")
             {
                 response.statusCode = 201;
@@ -142,3 +142,18 @@ int Client::checkPath(void)
     file.close();
     return (1);
 }
+
+void Client::setServerPtr(HttpServer* ptr)
+{
+    if(!ptr)
+        return;
+
+    server_ptr = ptr;
+
+    std::string rpath = ptr->getRoutedPath(request.path);
+    
+    std::cout << "RESOLE :" << request.path << "->" << rpath << std::endl; 
+
+    request.path = "." + rpath;
+}
+

@@ -68,7 +68,6 @@ int    HttpRequest::parseHead(std::string head, HttpResponse &response)
     path = headers[1];
     if (path.find('?') != std::string::npos)
         setQueryString();
-    std::cout << "\e[1;36mREQUEST PATH : " << path << "\e[0m" << std::endl;
     protocol = headers[2];
     if (getline(ss, headers[i], del) || !isUpper(methodName)
         || !isValidProtocol(protocol) || path[0] != '/')

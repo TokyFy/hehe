@@ -193,7 +193,6 @@ int HttpResponse::getContentLenght(void)
 
 void    HttpResponse::openFile(std::string path)
 {
-    std::cout << "*****" << mimeType << "*****" << std::endl;
     if (mimeType != "html")
     {
         std::cout << "BINARY" << std::endl;
@@ -207,7 +206,6 @@ void    HttpResponse::openFile(std::string path)
     }
     else
     {
-        std::cout << "TSY BINARY" << std::endl;
         if (method == "POST")
         {
             uploadFile.open(path.c_str());
@@ -216,12 +214,10 @@ void    HttpResponse::openFile(std::string path)
         else
             file.open(path.c_str());
     }
-    std::cout << "IS OPEN: " << file.is_open() << " | " << path << std::endl;
     file.seekg(0, std::ios::end);
     size_t size = file.tellg();
     file.seekg(0, std::ios::beg);
     contentLength = size;
-    std::cout << "CONTENT LENGTH: " << contentLength << std::endl;
 }
 
 HttpResponse &HttpResponse::operator=(HttpResponse const &to_what)

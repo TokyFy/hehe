@@ -130,15 +130,10 @@ std::string replaceFirstOccurrence(const std::string &originalString, const std:
 
 std::string indexof(Location& location, std::string path)
 {
-    if (path == "/")
-        path = location.getSource();
+    (void)(location);
+    DIR *folder = opendir(path.c_str());
 
-    std::string root = replaceFirstOccurrence(location.getRoot(), "/", "./");
-    std::string npath = replaceFirstOccurrence(path, location.getSource(), root);
-
-    DIR *folder = opendir(npath.c_str());
-
-    std::cerr << "INDEX OF " << npath << std::endl;
+    std::cerr << "INDEX OF " << path << std::endl;
 
     if (!folder)
     {
