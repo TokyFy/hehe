@@ -26,6 +26,15 @@ static const int    EPOLL_TIMEOUT_MS = 1000;
 static const int    CLIENT_TIMEOUT_SEC = 60;
 static const size_t READ_BUFFER_SIZE = 8192;
 
+static void logRequest(int status, const std::string &method, const std::string &path)
+{
+    const char* color = "\033[32m";
+    if (status >= 400) color = "\033[31m";
+    else if (status >= 300) color = "\033[33m";
+    
+    std::cout << color << status << "\033[0m " << method << " " << path << std::endl;
+}
+
 static HttpServer* findServerByFd(std::vector<HttpServer> &servers, int fd)
 {
     for (std::vector<HttpServer>::iterator it = servers.begin();
@@ -182,6 +191,8 @@ static void handleMultipart(Client &client, const Location &location)
 
 static void sendRedirect(Client &client, int code, const std::string &url)
 {
+    logRequest(code, client.request.methodName, client.request.rawPath);
+    
     std::stringstream ss;
     ss << "HTTP/1.1 " << code << " Redirect\r\n";
     ss << "Location: " << url << "\r\n";
@@ -194,6 +205,8 @@ static void sendRedirect(Client &client, int code, const std::string &url)
 
 static void sendCgiResponse(Client &client)
 {
+    logRequest(client.response.statusCode, client.request.methodName, client.request.rawPath);
+    
     std::stringstream ss;
     ss << "HTTP/1.1 " << client.response.statusCode << " OK\r\n";
     ss << "Content-Type: text/html\r\n";
@@ -208,6 +221,8 @@ static void sendCgiResponse(Client &client)
 
 static void sendDirectoryListing(Client &client, Location &location)
 {
+    logRequest(200, client.request.methodName, client.request.rawPath);
+    
     std::string content = indexof(location, client.request.path);
     send(client.client_fd, content.c_str(), content.size(), MSG_NOSIGNAL);
     client.response.full = true;
@@ -300,7 +315,10 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     
     std::string response;
     if (!client.response.header)
+    {
         response = client.response.createResponse(client.request);
+        logRequest(client.response.statusCode, client.request.methodName, client.request.rawPath);
+    }
     else
         response = client.response.rightMethod();
     
