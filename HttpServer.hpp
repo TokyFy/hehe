@@ -88,7 +88,7 @@ class HttpServer : public HttpAgent
         void                setName(const std::string& value);
 
         void                setErrorPage(int code , std::string path);
-        const std::string&  getErrorPage(int code);
+        const std::string  getErrorPage(int code);
         void                addLocation(Location& location);
         Location&           getLocation(std::string& path);
         std::string         getRoutedPath(const std::string& requestedPath) const;

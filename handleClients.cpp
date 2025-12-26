@@ -11,7 +11,7 @@
 /* ************************************************************************** */
 
 #include "handleClients.hpp"
-#include <iterator>
+#include <string>
 #include <unistd.h>
 
 HttpServer *findServer(std::vector<HttpServer> &servers, int server_fd)
@@ -101,11 +101,9 @@ void    handleMultipart(Client &client)
             if (type == "png" || type == "jpeg" || type == "jpg")
             {
                 multipartFile.open(filename.c_str(), std::ios::binary | std::ios::app);
-                std::cout << "TSY BINARY" << std::endl;
             }
             else
             {
-                std::cout << "\e[1;32mBINARY\e[0m" << std::endl;
                 multipartFile.open(filename.c_str(), std::ios::app);
             }
             // multipartFile(filename.c_str());
@@ -135,29 +133,29 @@ void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
 
     if(mime(client.request.path) == FOLDER)
     {
-        std::string indexContent = "";
-        if (client.server_ptr)
+        Location location = client.server_ptr->getLocation(client.request.rawPath);
+
+        if(!location.getAutoIndex())
         {
-            Location location = client.server_ptr->getLocation(client.request.path);
-            indexContent = indexof(location, client.request.path);
+            client.redirect(client.request.rawPath + location.getIndex());
+            return;
         }
-        else
-             std::string res = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nError";
+
+        std::string indexContent = indexof(location, client.request.path);
         send(client.client_fd, indexContent.c_str(), indexContent.size() , MSG_NOSIGNAL);
         client.response.full = true;
         return;
     }
 
-    std::cout << "\e[1;31mClient: " << client.request.path << "\e[0m" << std::endl;
-    // client.request.parse(client.entry);
+    // std::cout << "\e[1;31mClient: " << client.request.path << "\e[0m" << std::endl;
+
     if ((client.response.method == "DELETE") && (client.response.statusCode == 200))
         client.response.deleteMethod(client.request.path);
     client.response.mimeType = client.response.getRightMimeType(client.request.path);
     if (client.response.statusCode != 200 && client.response.statusCode != 201)
     {
-        client.response.method = "GET";
-        client.request.path = "./www/error.html";
-        client.response.mimeType = "html";
+        client.error();
+        return;
     }
     if ((!(client.response.file.is_open())) && (client.response.method != "DELETE"))
         client.response.openFile(client.request.path);
@@ -261,6 +259,7 @@ void multiple(std::vector<HttpServer> &servers)
                                 Location location;
                                 location = serverPtr->getLocation(client.request.path);
                                 std::string root = location.getRoot();
+                                client.request.rawPath = client.request.path;
                                 client.setServerPtr(client.server_ptr);
                                 client.checkPath();
                                 client.request.fullHeader = true;
@@ -300,7 +299,6 @@ void multiple(std::vector<HttpServer> &servers)
                     }
                     if ((all_events[i].events & EPOLLOUT))
                     {
-                        std::cout << "epollout event occured client to answer : " << fd << std::endl;
                         if (clients.find(fd) == clients.end())
                             continue;
                         Client &client = clients.find(fd)->second;
@@ -319,9 +317,7 @@ void multiple(std::vector<HttpServer> &servers)
                         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
                         close(client.client_fd);                       
                         clients.erase(client.client_fd);
-                        std::cout << "something else occured" << std::endl;
                     }
-                    std::cout << "\n";
                 }
             }
         }

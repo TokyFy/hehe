@@ -94,13 +94,13 @@ void HttpServer::setErrorPage(int code , std::string path)
     error_pages[code] = path; 
 }
 
-const std::string& HttpServer::getErrorPage(int code) {
+const std::string HttpServer::getErrorPage(int code) {
 
     (void)(code);
 
     std::map<int,std::string>::const_iterator it = error_pages.find(code);
     if (it == error_pages.end())
-        throw std::runtime_error("Error page not found");
+        return "";
 
     return it->second;
 }
@@ -270,9 +270,6 @@ void Location::setIndex(const std::string& value) {
 }
 
 bool Location::getAutoIndex() const {
-    if(index.size() == 0)
-        return false;
-
     return autoindex;
 }
 

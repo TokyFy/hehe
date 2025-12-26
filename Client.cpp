@@ -11,7 +11,10 @@
 /* ************************************************************************** */
 
 #include "Client.hpp"
+#include "HttpServer.hpp"
+#include "utils.hpp"
 #include <string>
+#include <cstdlib>
 
 Client::Client(void)
 {
@@ -154,3 +157,44 @@ void Client::setServerPtr(HttpServer* ptr)
     request.path = "." + rpath;
 }
 
+void Client::redirect(const std::string& path)
+{
+    std::string res = "HTTP/1.0 302 Found\r\nLocation: " + path +"\r\n\r\n";
+    send(client_fd, res.c_str(), res.size() , MSG_NOSIGNAL);
+    response.full = true;
+}
+
+void Client::error()
+{
+    std::string errorPath = server_ptr->getErrorPage(response.statusCode);
+
+    if(errorPath.size() > 0)
+    {
+        redirect(errorPath);
+        return;
+    }
+    
+    std::stringstream html;
+
+    html << "<html><head>";
+    html << "<title>Error</title>";
+    html << "<style> body { font-family: monospace; line-height: 1.2em; } </style>";
+    html << "</head><body>";
+    html << "<h4>ERROR "<< itos(response.statusCode) << "</h4><hr>" << "<p>" + response.getStatusMessage() + "</p>";
+    html << "</body></html>";
+
+    std::stringstream error;
+    
+    error << "HTTP/1.0 " + itos(response.statusCode) + " whatever\r\n";
+    error << "Content-Type: text/html\r\n";
+    error << "Content-Length: " << html.str().size() << "\r\n";
+    error << "Connection: close\r\n";
+    error << "\r\n";
+    error << html.str();
+   
+    std::string res = error.str();
+    send(client_fd, res.c_str(), res.size() , MSG_NOSIGNAL);
+    response.full = true;     
+
+    return;
+}

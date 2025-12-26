@@ -13,14 +13,9 @@
 #ifndef UTILS_HPP
 # define UTILS_HPP
 
-# include <iostream>
-# include <cctype>
-# include <sstream>
 #include "HttpServer.hpp"
 
 enum FILE_TYPE { BINARY , FOLDER , TEXT , HTML , CSS , JS , PNG , JPEG , ICO , MP4 , MPEG , ERR_DENIED , ERR_NOTFOUND }; 
-
-
 
 bool        isUpper(std::string str);
 bool        isValidProtocol(std::string str);
@@ -29,7 +24,6 @@ std::string intToString(int number);
 FILE_TYPE   mime(const std::string& str);
 std::string replaceFirstOccurrence(const std::string &originalString, const std::string &target, const std::string &replacement);
 std::string indexof(Location& location , std::string path);
-
-
+std::string itos(int n);
 
 #endif

@@ -30,6 +30,7 @@ class HttpRequest
     public:
         std::string     methodName;
         std::string     path; 
+        std::string     rawPath;
         std::string     protocol;
         std::map<std::string, std::string> headers;
         std::string     body;

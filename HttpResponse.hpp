@@ -17,7 +17,6 @@
 # include <fstream>
 # include <string>
 # include <unistd.h>
-# include "HttpRequest.hpp"
 
 class HttpRequest;
 

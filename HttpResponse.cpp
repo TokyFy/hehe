@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "HttpResponse.hpp"
+#include "HttpRequest.hpp"
 #include "utils.hpp"
 #include <cstring>
 
@@ -139,7 +140,6 @@ std::string HttpResponse::getBody(void)
         file.read(buffer, 8192);
         line.append(buffer, 8192);
         lastRead = file.tellg();
-        std::cout << lastRead << " < " << contentLength << std::endl;
         if (lastRead == -1)
         {
             full = true;
@@ -193,7 +193,7 @@ void    HttpResponse::openFile(std::string path)
 {
     if (mimeType != "html")
     {
-        std::cout << "BINARY" << std::endl;
+        // std::cout << "BINARY" << std::endl;
         if (method == "POST")
         {
             uploadFile.open(path.c_str(), std::ios::binary);

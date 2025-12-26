@@ -133,7 +133,7 @@ std::string indexof(Location& location, std::string path)
     (void)(location);
     DIR *folder = opendir(path.c_str());
 
-    std::cerr << "INDEX OF " << path << std::endl;
+    // std::cerr << "INDEX OF " << path << std::endl;
 
     if (!folder)
     {
@@ -182,4 +182,13 @@ std::string indexof(Location& location, std::string path)
     response << body;
 
     return response.str();
+}
+
+std::string itos(int n)
+{
+    std::stringstream ss;
+    ss << n;
+    std::string s = ss.str();
+
+    return s;
 }

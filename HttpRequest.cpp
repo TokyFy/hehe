@@ -122,7 +122,6 @@ int    HttpRequest::parse(std::string request)
     size_t pos = request.find("\r");
     if (pos == std::string::npos)
     {
-        std::cout << "zavatra" << std::endl;
         return (0);
     }
     // head = request.substr(0, pos);
@@ -157,7 +156,6 @@ void    HttpRequest::checkMultipart(void)
         type = content.substr(0, pos);
     if (type == "multipart/form-data")
     {
-        std::cout << "It is indeed multipart" << std::endl;
         multipart = true;
     }
     if (boundPos != std::string::npos)

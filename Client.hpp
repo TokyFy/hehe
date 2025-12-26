@@ -13,10 +13,6 @@
 #ifndef CLIENT_HPP
 # define CLIENT_HPP
 
-# include <iostream>
-# include <ctime>
-# include <cstdlib>
-# include <utility>
 # include <sys/epoll.h>
 # include <sys/socket.h>
 # include "HttpRequest.hpp"
@@ -48,6 +44,9 @@ class Client
         void    reset(void);
         int     checkPath(void);
         void    setServerPtr(HttpServer* ptr);
+        void    redirect(const std::string& path);
+        void    error();
 };
+
 
 #endif
