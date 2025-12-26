@@ -49,7 +49,6 @@ int     Client::checkHead(void)
     int         code;
 
     response.statusCode = 200;
-    // std::cout << "Client entry : " << entry << std::endl;
     size_t pos = entry.find("\r");
     head = entry.substr(0, pos);
     code = request.parseHead(head, response);
@@ -75,19 +74,12 @@ int     Client::checkHead(void)
     if ((pos + 4))
     {
         response.body = entry.substr(pos + 4);
-        // std::cout << "1" << response.body << "1" << std::endl;
         if (response.body.size() == response.contentLength)
             request.full = true;
     }
     request.checkMultipart();
     set();
     return (0);
-    //     return (1);
-    // request.parseHeaders(entry.substr(pos + 2));
-    // if (crochet != std::string::npos)
-    //     request.body = entry.substr(crochet);
-    // return (0);
-
 }
 
 Client &Client::operator=(Client const &to_what)
@@ -113,7 +105,6 @@ Client::Client(Client const &to_copy)
 
 void    Client::reset(void)
 {
-    std::cout << "resetting" << std::endl;
     sent = 0;
     entry.clear();
     request = HttpRequest();
@@ -159,7 +150,6 @@ void Client::setServerPtr(HttpServer* ptr)
     server_ptr = ptr;
 
     std::string rpath = ptr->getRoutedPath(request.path);
-    // Only add "." if path doesn't already start with "./" or "/"
     if (rpath.size() > 0 && rpath[0] == '/')
         request.path = "." + rpath;
     else if (rpath.size() >= 2 && rpath[0] == '.' && rpath[1] == '/')

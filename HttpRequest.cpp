@@ -105,31 +105,14 @@ void   HttpRequest::parseHeaders(std::string rest)
         rest.erase(0, pos + delimiter.length());
     }
     fillPair(rest);
-    std::map<std::string, std::string>::iterator it;
-
-    /*
-     * PRINTINT REQUEST
-    for (it = headers.begin(); it != headers.end(); ++it)
-        std::cout << it->first << " +:+ " << it->second << std::endl;
-    */
 }
 
 int    HttpRequest::parse(std::string request)
 {
-    // std::string head;
-
-    // response.statusCode = 200;
     size_t pos = request.find("\r");
     if (pos == std::string::npos)
-    {
         return (0);
-    }
-    // head = request.substr(0, pos);
-    // if (parseHead(head))
-    //     return (1);
     parseHeaders(request.substr(pos + 2));
-    // if (crochet != std::string::npos)
-    //     body = request.substr(crochet);
     return (0);
 }
 

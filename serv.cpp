@@ -26,10 +26,9 @@ int main(int argc , char **argv)
         return 1;
     }
 
-    // Setup signal handlers
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
-    signal(SIGPIPE, SIG_IGN); // Ignore SIGPIPE to handle broken pipes gracefully
+    signal(SIGPIPE, SIG_IGN);
 
     try
     {
@@ -42,7 +41,6 @@ int main(int argc , char **argv)
             return 1;
         }
         
-        // Normalize all servers
         for (size_t i = 0; i < servers.size(); i++)
         {
             servers[i].normalize();

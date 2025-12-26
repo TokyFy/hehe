@@ -127,7 +127,6 @@ std::string HttpResponse::getPairs(HttpRequest request)
         return ("");
     }
     std::string length;
-    // connection = "Connection: " + request.getPair("Connection") + "\r\n";
     contentType = "Content-type: " + getContentType() + "\r\n";
     length = "Content-Length: " + intToString(contentLength) + "\r\n";
     return (connection + contentType + length);
@@ -182,10 +181,7 @@ std::string HttpResponse::rightMethod(void)
 {
     if (method == "GET")
         return (getBody());
-    // else if (method == "POST")
-    //     return ("hehehe nanimo shimasen deshita");
-    else
-        return ("");
+    return ("");
 }
 
 int HttpResponse::getContentLenght(void)
@@ -197,7 +193,6 @@ void    HttpResponse::openFile(std::string path)
 {
     if (mimeType != "html")
     {
-        // std::cout << "BINARY" << std::endl;
         if (method == "POST")
         {
             uploadFile.open(path.c_str(), std::ios::binary);
