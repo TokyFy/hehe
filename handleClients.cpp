@@ -131,7 +131,7 @@ void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
     (void)(clients);
     (void)(fd);
 
-    if(mime(client.request.path) == FOLDER)
+    if(mime(client.request.path) == FOLDER && client.request.methodName == "GET")
     {
         Location location = client.server_ptr->getLocation(client.request.rawPath);
 
