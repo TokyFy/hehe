@@ -16,10 +16,25 @@
 #include "Client.hpp"
 #include "HttpServer.hpp"
 #include "Cgi.hpp"
+#include "utils.hpp"
 #include <map>
+#include <vector>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <cstring>
+#include <sys/epoll.h>
+#include <sys/socket.h>
 
+/**
+ * Main server event loop
+ * Uses single epoll() for all I/O operations
+ */
 void multiple(std::vector<HttpServer> &servers);
-void checkTimeout(std::map<int, Client> &clients, int epoll_fd);
 
+/**
+ * Check and disconnect timed-out clients
+ */
+void checkTimeout(std::map<int, Client> &clients, int epoll_fd);
 
 #endif

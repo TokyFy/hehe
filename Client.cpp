@@ -61,16 +61,14 @@ int     Client::checkHead(void)
     if (request.methodName == "POST" && response.statusCode == 200)
     {
         std::string length = request.getPair("Content-Length");
-        std::cout << "?????" << length << std::endl;
         if (length.empty())
             response.statusCode = 411;
-        response.contentLength = std::atoi(length.c_str());
+        else
+            response.contentLength = std::atoi(length.c_str());
         
         if (server_ptr && static_cast<ssize_t>(response.contentLength) > server_ptr->getClientMaxBodySize())
         {
             response.statusCode = 413;
-            std::cout << "Request body too large: " << response.contentLength 
-                      << " > " << server_ptr->getClientMaxBodySize() << std::endl;
         }
     }
     pos = entry.find("\r\n\r\n");

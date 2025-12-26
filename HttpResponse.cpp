@@ -22,6 +22,8 @@ HttpResponse::HttpResponse(void)
     header = false;
     multipartEnd = false;
     lastUploaded = 0;
+    contentLength = 0;
+    statusCode = 0;
 }
 
 HttpResponse::~HttpResponse(void)
