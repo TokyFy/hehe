@@ -32,6 +32,8 @@ class Location
         std::string cgi_path;
         std::string cgi_ext;
         std::string upload;
+        std::string redirect_url;
+        int         redirect_code;
 
     public:
         Location();
@@ -54,6 +56,11 @@ class Location
 
         const std::string&  getUploadPath() const;
         void                setUploadPath(const std::string& path);
+
+        const std::string&  getRedirectUrl() const;
+        void                setRedirectUrl(const std::string& url);
+        int                 getRedirectCode() const;
+        void                setRedirectCode(int code);
 
         void                addAllowedMethod(const std::string&);
         bool                isAllowedMethod(const std::string&);

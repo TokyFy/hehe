@@ -15,9 +15,11 @@
 
 #include "Client.hpp"
 #include "HttpServer.hpp"
+#include "Cgi.hpp"
 #include <map>
 
 void multiple(std::vector<HttpServer> &servers);
+void checkTimeout(std::map<int, Client> &clients, int epoll_fd);
 
 
 #endif

@@ -170,10 +170,12 @@ std::string HttpRequest::getType(void)
 
 void    HttpRequest::setQueryString(void)
 {
-    std::string extract = "";
     size_t pos;
     pos = path.find('?');
-    if (path[pos + 1])
-        extract = path.substr(pos + 1);
-    path = path.substr(0, pos);
+    if (pos != std::string::npos)
+    {
+        if (pos + 1 < path.length())
+            query = path.substr(pos + 1);
+        path = path.substr(0, pos);
+    }
 }

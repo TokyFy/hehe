@@ -65,6 +65,13 @@ int     Client::checkHead(void)
         if (length.empty())
             response.statusCode = 411;
         response.contentLength = std::atoi(length.c_str());
+        
+        if (server_ptr && static_cast<ssize_t>(response.contentLength) > server_ptr->getClientMaxBodySize())
+        {
+            response.statusCode = 413;
+            std::cout << "Request body too large: " << response.contentLength 
+                      << " > " << server_ptr->getClientMaxBodySize() << std::endl;
+        }
     }
     pos = entry.find("\r\n\r\n");
     if ((pos + 4))
@@ -154,7 +161,13 @@ void Client::setServerPtr(HttpServer* ptr)
     server_ptr = ptr;
 
     std::string rpath = ptr->getRoutedPath(request.path);
-    request.path = "." + rpath;
+    // Only add "." if path doesn't already start with "./" or "/"
+    if (rpath.size() > 0 && rpath[0] == '/')
+        request.path = "." + rpath;
+    else if (rpath.size() >= 2 && rpath[0] == '.' && rpath[1] == '/')
+        request.path = rpath;
+    else
+        request.path = "./" + rpath;
 }
 
 void Client::redirect(const std::string& path)

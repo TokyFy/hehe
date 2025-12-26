@@ -70,6 +70,7 @@ enum TokenType {
     TOKEN_AUTOINDEX,            // autoindex
     TOKEN_CGI,                  // cgi
     TOKEN_UPLOAD,               // upload
+    TOKEN_REDIRECT,             // redirect
 
 
                                 // Values

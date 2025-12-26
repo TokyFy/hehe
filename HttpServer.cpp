@@ -23,6 +23,7 @@
 #include <cerrno>
 #include <netinet/in.h>
 #include <iostream>
+#include <fcntl.h>
 
 
 HttpServer::HttpServer(int socket_fd)
@@ -124,6 +125,14 @@ void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
         throw std::runtime_error(std::string("setsockopt failed: ") + strerror(errno));
     }
 
+    // Set server socket to non-blocking
+    int flags = fcntl(server_fd, F_GETFL, 0);
+    if (flags == -1 || fcntl(server_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        close(server_fd);
+        throw std::runtime_error(std::string("fcntl failed: ") + strerror(errno));
+    }
+
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -136,7 +145,7 @@ void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
         throw std::runtime_error(std::string("bind failed: ") + strerror(errno));
     }
 
-    if (listen(server_fd, 10) == -1)
+    if (listen(server_fd, SOMAXCONN) == -1)
     {
         close(server_fd);
         throw std::runtime_error(std::string("listen failed: ") + strerror(errno));
@@ -150,6 +159,8 @@ void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
         throw std::runtime_error(std::string("epoll_ctl failed: ") + strerror(errno));
     }
     socket_fd = server_fd;
+    
+    std::cout << "Server " << name << " listening on " << interface << ":" << port << std::endl;
 }
 
 bool starts_with(const std::string& str, const std::string& prefix)
@@ -189,6 +200,7 @@ std::string HttpServer::getRoutedPath(const std::string& requestedPath) const
     // Default to LAST location
     std::vector<Location>::const_iterator matched = locations.end();
     --matched;
+    size_t longestMatch = 0;
 
     // Longest prefix match
     for (std::vector<Location>::const_iterator it = locations.begin();
@@ -196,10 +208,10 @@ std::string HttpServer::getRoutedPath(const std::string& requestedPath) const
     {
         const std::string& src = it->getSource();
 
-        if (starts_with(requestedPath, src))
+        if (starts_with(requestedPath, src) && src.size() > longestMatch)
         {
+            longestMatch = src.size();
             matched = it;
-            break;
         }
     }
 
@@ -211,11 +223,24 @@ std::string HttpServer::getRoutedPath(const std::string& requestedPath) const
 
     std::string root = matched->getRoot();
 
+    // Ensure proper path joining
+    // If root doesn't end with '/' and suffix doesn't start with '/', add '/'
+    if (!root.empty() && root[root.size() - 1] != '/' &&
+        !suffix.empty() && suffix[0] != '/')
+    {
+        root += "/";
+    }
     // Avoid double '/'
-    if (!root.empty() && root[root.size() - 1] == '/' &&
-        !suffix.empty() && suffix[0] == '/')
+    else if (!root.empty() && root[root.size() - 1] == '/' &&
+             !suffix.empty() && suffix[0] == '/')
     {
         root.erase(root.size() - 1);
+    }
+    
+    // Add trailing slash if suffix is empty and root doesn't end with /
+    if (suffix.empty() && !root.empty() && root[root.size() - 1] != '/')
+    {
+        suffix = "/";
     }
 
     return root + suffix;
@@ -242,7 +267,7 @@ void HttpServer::normalize()
 // Location Object
 
 Location::Location()
-    : source("/") , autoindex(true) , root("/") , allow_methods(0b000)
+    : source("/") , autoindex(true) , root("/") , allow_methods(0b000) , redirect_code(0)
 {
     return;
 }
@@ -312,6 +337,26 @@ void                Location::setUploadPath(const std::string& path)
     upload = path;
 }
 
+const std::string&  Location::getRedirectUrl() const
+{
+    return redirect_url;
+}
+
+void                Location::setRedirectUrl(const std::string& url)
+{
+    redirect_url = url;
+}
+
+int                 Location::getRedirectCode() const
+{
+    return redirect_code;
+}
+
+void                Location::setRedirectCode(int code)
+{
+    redirect_code = code;
+}
+
 void Location::addAllowedMethod(const std::string & method)
 {
     if(method == "GET")
@@ -347,8 +392,9 @@ void    Location::normalize()
     if(allow_methods == 0)
         throw std::runtime_error("Location should have at least on method allowed");
 
-    if(upload.empty() && !this->isAllowedMethod("POST"))
-        throw  std::runtime_error("Location should have upload path when POST allowed");
+    // Upload path only required for POST if no CGI is configured
+    if(upload.empty() && this->isAllowedMethod("POST") && cgi_path.empty())
+        throw std::runtime_error("Location should have upload path when POST allowed without CGI");
 }
 
 

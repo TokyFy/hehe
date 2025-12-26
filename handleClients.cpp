@@ -11,8 +11,11 @@
 /* ************************************************************************** */
 
 #include "handleClients.hpp"
+#include "Cgi.hpp"
 #include <string>
 #include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
 
 HttpServer *findServer(std::vector<HttpServer> &servers, int server_fd)
 {
@@ -29,13 +32,27 @@ HttpServer *findServer(std::vector<HttpServer> &servers, int server_fd)
 void    acceptClient(int &fd, int &epoll_fd, std::map<int, Client> &clients, HttpServer* server , struct epoll_event &events)
 {
     int client_fd = accept(fd, NULL, NULL);
+    if (client_fd < 0)
+        return;
+    
+    // Set client socket to non-blocking
+    int flags = fcntl(client_fd, F_GETFL, 0);
+    if (flags == -1 || fcntl(client_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        close(client_fd);
+        return;
+    }
+    
     Client client(client_fd, fd);
     client.setServerPtr(server);
+    client.time = clock();
     clients.insert(std::make_pair(client_fd, client));
-    events.events = EPOLLIN;
+    events.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP;
     events.data.fd = client_fd;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &events) == -1)
     {
+        close(client_fd);
+        clients.erase(client_fd);
         return;
     }
 }
@@ -44,19 +61,26 @@ void    checkTimeout(std::map<int , Client> &clients, int epoll_fd)
 {
     unsigned long   now;
     unsigned long   duration;
+    std::vector<int> toRemove;
     std::map<int, Client>::iterator it;
+    
     for (it = clients.begin(); it != clients.end(); ++it)
     {
         now = clock();
         duration = static_cast<unsigned long>(now - (it->second).time) / CLOCKS_PER_SEC;
-        if (duration >= 100)
+        if (duration >= 60)
         {
-            int fd = (it->second).client_fd;
-            std::cout << "THE CLIENT " << fd << " TIMED OUT" << std::endl;
-            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-            close(fd);
-            clients.erase(fd);
+            toRemove.push_back(it->first);
         }
+    }
+    
+    for (size_t i = 0; i < toRemove.size(); i++)
+    {
+        int fd = toRemove[i];
+        std::cout << "THE CLIENT " << fd << " TIMED OUT" << std::endl;
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+        close(fd);
+        clients.erase(fd);
     }
 }
 
@@ -126,15 +150,60 @@ void    handleMultipart(Client &client)
     }
 }
 
-void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client)
+void    setupResponse(std::map<int, Client> &clients, int &fd, Client &client, int &epoll_fd, struct epoll_event &events)
 {
     (void)(clients);
     (void)(fd);
 
+    // Handle redirects first
+    Location &location = client.server_ptr->getLocation(client.request.rawPath);
+    if (location.getRedirectCode() != 0)
+    {
+        std::string res = "HTTP/1.0 " + intToString(location.getRedirectCode()) + " Redirect\r\n";
+        res += "Location: " + location.getRedirectUrl() + "\r\n\r\n";
+        send(client.client_fd, res.c_str(), res.size(), MSG_NOSIGNAL);
+        client.response.full = true;
+        return;
+    }
+
+    // Check if method is allowed for this location
+    if (!location.isAllowedMethod(client.request.methodName))
+    {
+        client.response.statusCode = 405;
+        client.error();
+        return;
+    }
+
+    // Check for CGI request
+    bool isCgi = isCgiRequest(client.request.path, location);
+    
+    if (isCgi && !location.getCgiPath().empty())
+    {
+        handleCgi(client, *client.server_ptr, epoll_fd, events);
+        
+        if (client.response.statusCode != 200)
+        {
+            client.error();
+            return;
+        }
+        
+        // Send CGI response
+        std::stringstream response;
+        response << "HTTP/1.0 200 OK\r\n";
+        response << "Content-Type: text/html\r\n";
+        response << "Content-Length: " << client.response.body.size() << "\r\n";
+        response << "Connection: close\r\n";
+        response << "\r\n";
+        response << client.response.body;
+        
+        std::string res = response.str();
+        send(client.client_fd, res.c_str(), res.size(), MSG_NOSIGNAL);
+        client.response.full = true;
+        return;
+    }
+
     if(mime(client.request.path) == FOLDER && client.request.methodName == "GET")
     {
-        Location location = client.server_ptr->getLocation(client.request.rawPath);
-
         if(!location.getAutoIndex())
         {
             client.redirect(client.request.rawPath + location.getIndex());
@@ -206,11 +275,21 @@ void multiple(std::vector<HttpServer> &servers)
 
     while (true)
     {
-        int count = epoll_wait(epoll_fd, all_events, 10, -1);
+        // Check for client timeouts periodically
+        checkTimeout(clients, epoll_fd);
+        
+        int count = epoll_wait(epoll_fd, all_events, 10, 1000); // 1 second timeout
         if (count == -1)
         {
+            if (errno == EINTR)
+                continue;
             std::cerr << "epoll wait error" << std::endl;
             return;
+        }
+        else if (count == 0)
+        {
+            // Timeout, loop back to check for client timeouts
+            continue;
         }
         else
         {
@@ -276,18 +355,35 @@ void multiple(std::vector<HttpServer> &servers)
                                 if (!client.request.full)
                                 {
                                     int bytes_read = read(client.client_fd, buffer.data(), buffer.size());
-                                    if (bytes_read <= 0)
+                                    if (bytes_read > 0)
                                     {
-                                            close(client.client_fd);
-                                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
-                                            clients.erase(client.client_fd);
-                                            continue;
+                                        client.response.body.append(buffer.data(), bytes_read);
+                                        client.request.body.append(buffer.data(), bytes_read);
+                                    }
+                                    else if (bytes_read == 0)
+                                    {
+                                        // Connection closed
+                                        close(client.client_fd);
+                                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
+                                        clients.erase(client.client_fd);
+                                        continue;
+                                    }
+                                    else if (errno != EAGAIN && errno != EWOULDBLOCK)
+                                    {
+                                        // Read error
+                                        close(client.client_fd);
+                                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
+                                        clients.erase(client.client_fd);
+                                        continue;
                                     }
                                 }
                                 if (client.request.multipart)
                                     handleMultipart(client);
-                                if (client.response.body.size() == client.response.contentLength || client.response.multipartEnd)
+                                if (client.response.body.size() >= client.response.contentLength || client.response.multipartEnd)
+                                {
                                     client.request.full = true;
+                                    client.request.body = client.response.body;
+                                }
                                 else
                                     continue;
                             }
@@ -302,7 +398,7 @@ void multiple(std::vector<HttpServer> &servers)
                         if (clients.find(fd) == clients.end())
                             continue;
                         Client &client = clients.find(fd)->second;
-                        setupResponse(clients, fd, client);      
+                        setupResponse(clients, fd, client, epoll_fd, events);      
                         if (!(client.response.full))
                             continue;
                         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);

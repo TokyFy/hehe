@@ -38,9 +38,10 @@ const char* token_type_to_string(TokenType type)
         case TOKEN_ERROR_PAGE:            return "TOKEN_ERROR_PAGE";
         case TOKEN_ALLOW_METHODS:         return "TOKEN_ALLOW_METHODS";
         case TOKEN_CLIENT_MAX_BODY_SIZE:  return "TOKEN_CLIENT_MAX_BODY_SIZE";
+        case TOKEN_UPLOAD:                return "TOKEN_UPLOAD";
+        case TOKEN_REDIRECT:              return "TOKEN_REDIRECT";
         case TOKEN_WORDS:                 return "TOKEN_WORDS";
-        case TOKEN_UPLOAD:                 return "TOKEN_WORDS";
-        case TOKEN_EOF:                 return "TOKEN_EOF";
+        case TOKEN_EOF:                   return "TOKEN_EOF";
     }
     return "UNKNOWN_TOKEN";
 }
@@ -63,6 +64,7 @@ TokenType get_token_type(std::string &token)
         case 0x0C3E3CBCu    : return TOKEN_ALLOW_METHODS;
         case 0x74F60DEFu    : return TOKEN_CLIENT_MAX_BODY_SIZE;
         case 0xCE040E01u    : return TOKEN_UPLOAD;
+        case 0x1BCFD7DCu    : return TOKEN_REDIRECT;
         
         default             : return TOKEN_WORDS;
     }
@@ -442,6 +444,32 @@ void parse_location_upload(Location *location , std::vector<t_token> &tokens)
     std::cout << location->getSource() << " | upload : " << location->getUploadPath() << std::endl;
 }
 
+void parse_location_redirect(Location *location , std::vector<t_token> &tokens)
+{
+    tokens.erase(tokens.begin());
+    
+    if(tokens.size() < 2 || tokens[0].first != TOKEN_WORDS || tokens[1].first != TOKEN_WORDS)
+        throw std::runtime_error(location->getSource() + " : redirect needs code and URL");
+
+    int code = std::atoi(tokens[0].second.c_str());
+    if (code != 301 && code != 302 && code != 303 && code != 307 && code != 308)
+        throw std::runtime_error(location->getSource() + " : invalid redirect code");
+        
+    location->setRedirectCode(code);
+    tokens.erase(tokens.begin());
+    
+    location->setRedirectUrl(tokens[0].second);
+    tokens.erase(tokens.begin());
+
+    if(tokens[0].first != TOKEN_SEMICOLON)
+        throw std::runtime_error(location->getSource() + " : Missing semicolon on redirect");
+
+    tokens.erase(tokens.begin());
+
+    std::cout << location->getSource() << " | redirect : " << location->getRedirectCode() 
+              << " " << location->getRedirectUrl() << std::endl;
+}
+
 void parse_location(HttpServer *server , std::vector<t_token> &tokens)
 {
     Location location;
@@ -486,7 +514,9 @@ void parse_location(HttpServer *server , std::vector<t_token> &tokens)
             case TOKEN_COMMENT :
                 parse_comment(tokens); break;
             case TOKEN_UPLOAD :
-                parse_location_upload(&location , tokens) ; break; 
+                parse_location_upload(&location , tokens) ; break;
+            case TOKEN_REDIRECT :
+                parse_location_redirect(&location , tokens) ; break;
             default:
                 throw std::runtime_error("Unkown location directive " + value);
         } 

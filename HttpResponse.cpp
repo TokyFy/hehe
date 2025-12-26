@@ -66,6 +66,8 @@ std::string HttpResponse::getStatusMessage(void)
             return (" CONFLICT\r\n");
         case 411:
             return (" Length Required\r\n");
+        case 413:
+            return (" Request Entity Too Large\r\n");
         case 500:
             return (" Internal Server Error\r\n");
         case 501:
