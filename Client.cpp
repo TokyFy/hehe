@@ -175,30 +175,42 @@ void Client::redirect(const std::string& path)
 void Client::error()
 {
     std::string errorPath = server_ptr->getErrorPage(response.statusCode);
+    std::string html;
 
+    // Try to read custom error page
     if(errorPath.size() > 0 && access(errorPath.c_str(), F_OK) == 0)
     {
-        redirect(errorPath);
-        return;
+        std::ifstream file(errorPath.c_str());
+        if (file.is_open())
+        {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            html = buffer.str();
+            file.close();
+        }
     }
     
-    std::stringstream html;
-
-    html << "<html><head>";
-    html << "<title>Error</title>";
-    html << "<style> body { font-family: monospace; line-height: 1.2em; } </style>";
-    html << "</head><body>";
-    html << "<h4>ERROR "<< itos(response.statusCode) << "</h4><hr>" << "<p>" + response.getStatusMessage() + "</p>";
-    html << "</body></html>";
+    // Fallback to default error page if custom page couldn't be read
+    if (html.empty())
+    {
+        std::stringstream defaultHtml;
+        defaultHtml << "<html><head>";
+        defaultHtml << "<title>Error</title>";
+        defaultHtml << "<style> body { font-family: monospace; line-height: 1.2em; } </style>";
+        defaultHtml << "</head><body>";
+        defaultHtml << "<h4>ERROR "<< itos(response.statusCode) << "</h4><hr>" << "<p>" + response.getStatusMessage() + "</p>";
+        defaultHtml << "</body></html>";
+        html = defaultHtml.str();
+    }
 
     std::stringstream error;
     
-    error << "HTTP/1.0 " + itos(response.statusCode) + " whatever\r\n";
+    error << "HTTP/1.1 " << itos(response.statusCode) << " " << response.getStatusMessage() << "\r\n";
     error << "Content-Type: text/html\r\n";
-    error << "Content-Length: " << html.str().size() << "\r\n";
+    error << "Content-Length: " << html.size() << "\r\n";
     error << "Connection: close\r\n";
     error << "\r\n";
-    error << html.str();
+    error << html;
    
     std::string res = error.str();
     send(client_fd, res.c_str(), res.size() , MSG_NOSIGNAL);
