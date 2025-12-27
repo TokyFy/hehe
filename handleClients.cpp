@@ -111,6 +111,22 @@ void checkTimeout(std::map<int, Client> &clients, int epoll_fd)
         closeClient(epoll_fd, clients, toRemove[i]);
 }
 
+static std::string sanitizeFilename(const std::string& filename)
+{
+    std::string result;
+    for (size_t i = 0; i < filename.size(); i++)
+    {
+        unsigned char c = filename[i];
+        if (c == ' ')
+            result += '_';
+        else if (c >= 32 && c < 127 && c != '/' && c != '\\')
+            result += c;
+    }
+    if (result.empty())
+        result = "uploaded_file";
+    return result;
+}
+
 static std::string extractFilename(const std::string& header)
 {
     std::string toSearch = "filename=\"";
@@ -123,7 +139,11 @@ static std::string extractFilename(const std::string& header)
     if (endPos == std::string::npos)
         return "";
     
-    return header.substr(pos, endPos - pos);
+    std::string filename = header.substr(pos, endPos - pos);
+    filename = urlDecode(filename);
+    filename = sanitizeFilename(filename);
+    
+    return filename;
 }
 
 static int processStreamingUpload(Client &client, const char* data, size_t len, const Location &location)
