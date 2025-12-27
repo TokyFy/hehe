@@ -72,7 +72,7 @@ int    HttpRequest::parseHead(std::string head, HttpResponse &response)
     if (!isValidMethod(methodName))
         return (405);
     
-    path = headers[1];
+    path = urlDecode(headers[1]);
     if (!isValidPath(path))
         return (400);
     

@@ -116,6 +116,42 @@ bool    isValidHeaderValue(const std::string &value)
     return true;
 }
 
+static int hexToInt(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+std::string urlDecode(const std::string &str)
+{
+    std::string result;
+    result.reserve(str.size());
+    
+    for (size_t i = 0; i < str.size(); i++)
+    {
+        if (str[i] == '%' && i + 2 < str.size())
+        {
+            int hi = hexToInt(str[i + 1]);
+            int lo = hexToInt(str[i + 2]);
+            if (hi >= 0 && lo >= 0)
+            {
+                result += static_cast<char>((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        else if (str[i] == '+')
+        {
+            result += ' ';
+            continue;
+        }
+        result += str[i];
+    }
+    return result;
+}
+
 std::string intToString(int number)
 {
     std::string         ret;

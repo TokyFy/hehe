@@ -24,6 +24,7 @@ bool        isValidPath(const std::string &path);
 bool        isValidHeaderName(const std::string &name);
 bool        isValidHeaderValue(const std::string &value);
 bool        hasControlChars(const std::string &str);
+std::string urlDecode(const std::string &str);
 std::string intToString(int number);
 FILE_TYPE   mime(const std::string& str);
 std::string replaceFirstOccurrence(const std::string &originalString, const std::string &target, const std::string &replacement);
