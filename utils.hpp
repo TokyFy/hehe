@@ -20,6 +20,10 @@ enum FILE_TYPE { BINARY , FOLDER , TEXT , HTML , CSS , JS , PNG , JPEG , ICO , M
 bool        isUpper(std::string str);
 bool        isValidProtocol(std::string str);
 bool        isValidMethod(std::string str);
+bool        isValidPath(const std::string &path);
+bool        isValidHeaderName(const std::string &name);
+bool        isValidHeaderValue(const std::string &value);
+bool        hasControlChars(const std::string &str);
 std::string intToString(int number);
 FILE_TYPE   mime(const std::string& str);
 std::string replaceFirstOccurrence(const std::string &originalString, const std::string &target, const std::string &replacement);

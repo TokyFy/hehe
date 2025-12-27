@@ -70,6 +70,10 @@ std::string HttpResponse::getStatusMessage(void)
             return "Length Required";
         case 413:
             return "Request Entity Too Large";
+        case 414:
+            return "URI Too Long";
+        case 431:
+            return "Request Header Fields Too Large";
         case 500:
             return "Internal Server Error";
         case 501:

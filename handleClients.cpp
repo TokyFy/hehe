@@ -592,8 +592,45 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
         
         client.entry.append(buffer, bytes_read);
         
+        // Limit header size to prevent DoS (max 16KB for headers)
+        static const size_t MAX_HEADER_SIZE = 16384;
+        if (client.entry.size() > MAX_HEADER_SIZE && 
+            client.entry.find("\r\n\r\n") == std::string::npos)
+        {
+            std::cerr << "\033[31m[REJECTED]\033[0m Headers too large (" 
+                      << client.entry.size() << " bytes)" << std::endl;
+            client.response.statusCode = 431; // Request Header Fields Too Large
+            struct epoll_event ev;
+            ev.events = EPOLLOUT;
+            ev.data.fd = client.client_fd;
+            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client.client_fd, &ev);
+            return;
+        }
+        
+        // Quick validation: check if first line looks like HTTP
+        if (client.entry.size() > 0 && client.entry.find("\r\n") != std::string::npos)
+        {
+            // Check for null bytes (binary/garbage data)
+            if (client.entry.find('\0') != std::string::npos)
+            {
+                std::cerr << "\033[31m[REJECTED]\033[0m Binary/malformed data detected" << std::endl;
+                closeClient(epoll_fd, clients, client.client_fd);
+                return;
+            }
+        }
+        
         if (!parseRequestHeaders(client, server))
             return;
+        
+        // Check if parsing resulted in an error
+        if (client.response.statusCode >= 400)
+        {
+            struct epoll_event ev;
+            ev.events = EPOLLOUT;
+            ev.data.fd = client.client_fd;
+            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client.client_fd, &ev);
+            return;
+        }
     }
     
     if ((client.response.statusCode == 200 || client.response.statusCode == 201) &&

@@ -60,6 +60,72 @@ bool    isValidMethod(std::string str)
     return (true);
 }
 
+bool    hasControlChars(const std::string &str)
+{
+    for (size_t i = 0; i < str.size(); i++)
+    {
+        unsigned char c = str[i];
+        // Control characters (0-31) except tab (9), and DEL (127)
+        if ((c < 32 && c != 9) || c == 127)
+            return true;
+    }
+    return false;
+}
+
+bool    isValidPath(const std::string &path)
+{
+    if (path.empty() || path[0] != '/')
+        return false;
+    // Check for null bytes or control characters
+    if (hasControlChars(path))
+        return false;
+    // Path too long (prevent DoS)
+    if (path.size() > 8192)
+        return false;
+    // Check for directory traversal attempts
+    if (path.find("/../") != std::string::npos || 
+        path.find("/..") == path.size() - 3)
+        return false;
+    return true;
+}
+
+bool    isValidHeaderName(const std::string &name)
+{
+    if (name.empty() || name.size() > 256)
+        return false;
+    // Header name should only contain valid token characters
+    for (size_t i = 0; i < name.size(); i++)
+    {
+        unsigned char c = name[i];
+        // RFC 7230: token = 1*tchar
+        // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+        //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+        if (c <= 32 || c >= 127 || c == ':' || c == '(' || c == ')' || 
+            c == '<' || c == '>' || c == '@' || c == ',' || c == ';' ||
+            c == '\\' || c == '"' || c == '/' || c == '[' || c == ']' ||
+            c == '?' || c == '=' || c == '{' || c == '}')
+            return false;
+    }
+    return true;
+}
+
+bool    isValidHeaderValue(const std::string &value)
+{
+    if (value.size() > 8192)
+        return false;
+    // Check for null bytes and other dangerous control chars
+    for (size_t i = 0; i < value.size(); i++)
+    {
+        unsigned char c = value[i];
+        // Allow printable ASCII, space, and tab
+        if (c < 32 && c != 9)
+            return false;
+        if (c == 127)
+            return false;
+    }
+    return true;
+}
+
 std::string intToString(int number)
 {
     std::string         ret;
