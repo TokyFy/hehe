@@ -96,13 +96,9 @@ char** setupEnv(Client &client, HttpServer &server, std::string &script_path)
 
 bool startCgi(Client &client, HttpServer &server, int epoll_fd)
 {
-    // Use rawPath for location matching, path for actual file
     Location &location = server.getLocation(client.request.rawPath);
-    
-    // Get the file path and convert to absolute
     std::string script_path = client.request.path;
     
-    // Convert relative path to absolute if needed
     if (script_path.size() > 0 && script_path[0] != '/')
     {
         char cwd[4096];
@@ -115,14 +111,12 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
         }
     }
     
-    // Check if CGI interpreter exists
     if (access(location.getCgiPath().c_str(), X_OK) != 0)
     {
         client.response.statusCode = 500;
         return false;
     }
     
-    // Check if script exists
     if (access(script_path.c_str(), R_OK) != 0)
     {
         client.response.statusCode = 404;
@@ -170,7 +164,6 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     
     if (pid == 0)
     {
-        // Child process
         close(pipeIn[1]);
         close(pipeOut[0]);
         
@@ -182,7 +175,6 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
         close(pipeIn[0]);
         close(pipeOut[1]);
         
-        // Change to script directory for relative path access
         std::string scriptDir = script_path;
         size_t lastSlash = scriptDir.find_last_of('/');
         if (lastSlash != std::string::npos)
@@ -196,12 +188,10 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
         exit(1);
     }
     
-    // Parent process
     freeCharArray(env);
     close(pipeIn[0]);
     close(pipeOut[1]);
     
-    // Setup CGI state
     client.cgi.active = true;
     client.cgi.pid = pid;
     client.cgi.pipeIn = pipeIn[1];
@@ -210,16 +200,13 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     client.cgi.outputBuffer.clear();
     client.cgi.inputOffset = 0;
     
-    // Store POST body if any
     if (client.request.methodName == "POST" && !client.request.body.empty())
         client.cgi.inputBuffer = client.request.body;
     else
         client.cgi.inputBuffer.clear();
     
-    // Register pipes with epoll
     struct epoll_event ev;
     
-    // Register output pipe for reading
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP;
     ev.data.fd = pipeOut[0];
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipeOut[0], &ev) == -1)
@@ -234,7 +221,6 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     }
     g_cgiPipeToClient[pipeOut[0]] = client.client_fd;
     
-    // Register input pipe for writing if we have data to send
     if (!client.cgi.inputBuffer.empty())
     {
         ev.events = EPOLLOUT | EPOLLERR | EPOLLHUP;
@@ -255,7 +241,6 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     }
     else
     {
-        // No input to send, close write pipe immediately
         close(pipeIn[1]);
         client.cgi.pipeIn = -1;
     }
@@ -271,7 +256,6 @@ void handleCgiWrite(Client &client, int epoll_fd)
     size_t remaining = client.cgi.inputBuffer.size() - client.cgi.inputOffset;
     if (remaining == 0)
     {
-        // Done writing, close pipe
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
         g_cgiPipeToClient.erase(client.cgi.pipeIn);
         close(client.cgi.pipeIn);
@@ -285,8 +269,6 @@ void handleCgiWrite(Client &client, int epoll_fd)
     if (written > 0)
     {
         client.cgi.inputOffset += written;
-        
-        // Check if done
         if (client.cgi.inputOffset >= client.cgi.inputBuffer.size())
         {
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
@@ -297,7 +279,6 @@ void handleCgiWrite(Client &client, int epoll_fd)
     }
     else if (written < 0)
     {
-        // Write error, close pipe
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
         g_cgiPipeToClient.erase(client.cgi.pipeIn);
         close(client.cgi.pipeIn);
@@ -319,20 +300,17 @@ void handleCgiRead(Client &client, int epoll_fd)
     }
     else if (bytes_read == 0)
     {
-        // EOF - CGI closed its stdout
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeOut, NULL);
         g_cgiPipeToClient.erase(client.cgi.pipeOut);
         close(client.cgi.pipeOut);
         client.cgi.pipeOut = -1;
     }
-    // bytes_read < 0: EAGAIN/EWOULDBLOCK, just wait for next event
 }
 
 void parseCgiOutput(Client &client)
 {
     std::string &output = client.cgi.outputBuffer;
     
-    // Parse CGI output
     size_t header_end = output.find("\r\n\r\n");
     if (header_end == std::string::npos)
         header_end = output.find("\n\n");
@@ -344,7 +322,6 @@ void parseCgiOutput(Client &client)
                             ? header_end + 4 : header_end + 2;
         client.response.body = output.substr(body_start);
         
-        // Check for Content-Type in CGI headers
         if (cgi_headers.find("Content-Type:") == std::string::npos &&
             cgi_headers.find("Content-type:") == std::string::npos)
         {
@@ -355,7 +332,6 @@ void parseCgiOutput(Client &client)
             client.response.mimeType = "html";
         }
         
-        // Check for Status header in CGI output
         size_t statusPos = cgi_headers.find("Status:");
         if (statusPos != std::string::npos)
         {
@@ -374,7 +350,6 @@ void parseCgiOutput(Client &client)
     }
     else
     {
-        // No headers, treat entire output as body
         client.response.body = output;
         client.response.mimeType = "html";
         client.response.statusCode = 200;

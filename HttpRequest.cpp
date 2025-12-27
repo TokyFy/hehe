@@ -52,13 +52,10 @@ HttpRequest &HttpRequest::operator=(HttpRequest const &to_what)
 
 int    HttpRequest::parseHead(std::string head, HttpResponse &response)
 {
-    // Check for empty or whitespace-only request
     if (head.empty() || head.find_first_not_of(" \t\r\n") == std::string::npos)
         return (400);
-    
-    // Check request line length (prevent DoS)
     if (head.size() > 8192)
-        return (414); // URI Too Long
+        return (414);
     
     std::stringstream ss(head);
     char del = ' ';
@@ -68,55 +65,36 @@ int    HttpRequest::parseHead(std::string head, HttpResponse &response)
     for (; i < 3; i++)
         getline(ss, headers[i], del);
     
-    // Validate we got all three parts
     if (headers[0].empty() || headers[1].empty() || headers[2].empty())
         return (400);
     
     methodName = headers[0];
     if (!isValidMethod(methodName))
-    {
-        std::cout << "invalid method: " << methodName << std::endl;
         return (405);
-    }
     
     path = headers[1];
-    
-    // Validate path format
     if (!isValidPath(path))
-    {
-        std::cout << "invalid path: " << path << std::endl;
         return (400);
-    }
     
     if (path.find('?') != std::string::npos)
         setQueryString();
     
     protocol = headers[2];
-    
-    // Remove trailing CR if present
     if (!protocol.empty() && protocol[protocol.size() - 1] == '\r')
         protocol = protocol.substr(0, protocol.size() - 1);
     
-    // Check for extra tokens after protocol
     if (getline(ss, headers[3], del) && !headers[3].empty())
     {
-        // Remove whitespace to check if actually extra content
         std::string trimmed = headers[3];
         size_t start = trimmed.find_first_not_of(" \t\r\n");
         if (start != std::string::npos)
             return (400);
     }
     
-    // Validate method is uppercase
     if (!isUpper(methodName))
         return (400);
-    
-    // Validate protocol
     if (!isValidProtocol(protocol))
-    {
-        std::cout << "invalid protocol: " << protocol << std::endl;
         return (400);
-    }
     
     response.method = methodName;
     return (0);
@@ -127,19 +105,16 @@ void    HttpRequest::fillPair(std::string pair)
     if (pair.empty())
         return ;
     
-    // Find the first colon to split header name and value
     size_t colonPos = pair.find(':');
     if (colonPos == std::string::npos || colonPos == 0)
-        return ; // Invalid header format, skip it
+        return ;
     
     std::string name = pair.substr(0, colonPos);
     std::string value;
     
-    // Get value (everything after colon)
     if (colonPos + 1 < pair.size())
     {
         value = pair.substr(colonPos + 1);
-        // Trim leading and trailing whitespace
         size_t start = value.find_first_not_of(" \t");
         size_t end = value.find_last_not_of(" \t\r\n");
         if (start != std::string::npos && end != std::string::npos)
@@ -150,17 +125,8 @@ void    HttpRequest::fillPair(std::string pair)
             value.clear();
     }
     
-    // Validate header name and value
-    if (!isValidHeaderName(name))
-    {
-        std::cerr << "\033[33m[WARNING]\033[0m Invalid header name: " << name << std::endl;
+    if (!isValidHeaderName(name) || !isValidHeaderValue(value))
         return ;
-    }
-    if (!isValidHeaderValue(value))
-    {
-        std::cerr << "\033[33m[WARNING]\033[0m Invalid header value for: " << name << std::endl;
-        return ;
-    }
     
     headers.insert(std::pair<std::string, std::string>(name, value));
 }

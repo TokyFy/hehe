@@ -65,7 +65,6 @@ bool    hasControlChars(const std::string &str)
     for (size_t i = 0; i < str.size(); i++)
     {
         unsigned char c = str[i];
-        // Control characters (0-31) except tab (9), and DEL (127)
         if ((c < 32 && c != 9) || c == 127)
             return true;
     }
@@ -76,13 +75,10 @@ bool    isValidPath(const std::string &path)
 {
     if (path.empty() || path[0] != '/')
         return false;
-    // Check for null bytes or control characters
     if (hasControlChars(path))
         return false;
-    // Path too long (prevent DoS)
     if (path.size() > 8192)
         return false;
-    // Check for directory traversal attempts
     if (path.find("/../") != std::string::npos || 
         path.find("/..") == path.size() - 3)
         return false;
@@ -93,13 +89,9 @@ bool    isValidHeaderName(const std::string &name)
 {
     if (name.empty() || name.size() > 256)
         return false;
-    // Header name should only contain valid token characters
     for (size_t i = 0; i < name.size(); i++)
     {
         unsigned char c = name[i];
-        // RFC 7230: token = 1*tchar
-        // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-        //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
         if (c <= 32 || c >= 127 || c == ':' || c == '(' || c == ')' || 
             c == '<' || c == '>' || c == '@' || c == ',' || c == ';' ||
             c == '\\' || c == '"' || c == '/' || c == '[' || c == ']' ||
@@ -113,11 +105,9 @@ bool    isValidHeaderValue(const std::string &value)
 {
     if (value.size() > 8192)
         return false;
-    // Check for null bytes and other dangerous control chars
     for (size_t i = 0; i < value.size(); i++)
     {
         unsigned char c = value[i];
-        // Allow printable ASCII, space, and tab
         if (c < 32 && c != 9)
             return false;
         if (c == 127)
@@ -140,30 +130,23 @@ FILE_TYPE mime(const std::string& str)
 {
     const char *path = str.c_str();
 
-    // Check existence
     if (access(path, F_OK) == -1)
         return ERR_NOTFOUND;
-
-    // Check readability
     if (access(path, R_OK) == -1)
         return ERR_DENIED;
 
     struct stat info;
     if (stat(path, &info) == -1)
-        return BINARY; // fallback
+        return BINARY;
 
-    // Directory
     if (S_ISDIR(info.st_mode))
         return FOLDER;
 
-    // Get file extension
     size_t pos = str.find_last_of('.');
     if (pos == std::string::npos)
         return BINARY;
 
     std::string ext = str.substr(pos);
-
-    // Map extensions to FILE_TYPE
     if (ext == ".html" || ext == ".htm") return HTML;
     if (ext == ".txt")                   return TEXT;
     if (ext == ".css")                   return CSS;
@@ -209,8 +192,6 @@ std::string indexof(Location& location, std::string path, std::string urlPath)
     (void)(location);
     DIR *folder = opendir(path.c_str());
 
-    // std::cerr << "INDEX OF " << path << std::endl;
-
     if (!folder)
     {
         return
@@ -222,7 +203,6 @@ std::string indexof(Location& location, std::string path, std::string urlPath)
             "Not Found";
     }
 
-    // Remove trailing slash from urlPath for proper link construction
     if (urlPath.size() > 1 && urlPath[urlPath.size() - 1] == '/')
         urlPath = urlPath.substr(0, urlPath.size() - 1);
 
@@ -235,7 +215,6 @@ std::string indexof(Location& location, std::string path, std::string urlPath)
     html << "</head><body>";
     html << "<h3>Index of " << urlPath << "</h3><hr>";
 
-    // Add . and .. entries first
     html << "<p><a href=\"" << urlPath << "/\">.</a></p>";
     if (urlPath != "/" && !urlPath.empty())
     {

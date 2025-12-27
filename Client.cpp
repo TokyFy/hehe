@@ -81,7 +81,6 @@ int     Client::checkHead(void)
     if ((pos + 4))
     {
         response.body = entry.substr(pos + 4);
-        // Don't mark as full for multipart - let streaming handle it
         if (!request.multipart && response.body.size() == response.contentLength)
             request.full = true;
     }
@@ -178,7 +177,6 @@ void Client::sendStatusPage()
     std::string pagePath = server_ptr->getErrorPage(response.statusCode);
     std::string html;
 
-    // Try to read custom page from config
     if(pagePath.size() > 0 && access(pagePath.c_str(), F_OK) == 0)
     {
         std::ifstream file(pagePath.c_str());
@@ -191,7 +189,6 @@ void Client::sendStatusPage()
         }
     }
     
-    // Fallback to default page
     if (html.empty())
     {
         std::stringstream defaultHtml;

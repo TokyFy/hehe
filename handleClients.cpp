@@ -52,7 +52,6 @@ static void closeClient(int epoll_fd, std::map<int, Client> &clients, int client
     std::map<int, Client>::iterator it = clients.find(client_fd);
     if (it != clients.end())
     {
-        // Clean up CGI if active
         if (it->second.cgi.active)
             cleanupCgi(it->second, epoll_fd);
     }
@@ -72,8 +71,6 @@ static void acceptNewClient(int server_fd, int epoll_fd,
         std::cerr << "accept() failed: " << strerror(errno) << std::endl;
         return;
     }
-    
-    // Socket is already non-blocking (created with SOCK_NONBLOCK)
     
     Client client(client_fd, server_fd);
     client.setServerPtr(server);
@@ -129,7 +126,6 @@ static std::string extractFilename(const std::string& header)
     return header.substr(pos, endPos - pos);
 }
 
-// Streaming upload - writes directly to disk without loading entire file in memory
 static int processStreamingUpload(Client &client, const char* data, size_t len, const Location &location)
 {
     UploadState &up = client.upload;
@@ -143,17 +139,14 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
     {
         if (up.phase == UploadState::WAITING_HEADERS)
         {
-            // Look for the first boundary
             size_t boundPos = up.buffer.find(up.boundary);
             if (boundPos == std::string::npos)
             {
-                // Keep only last boundary-length bytes in buffer
                 if (up.buffer.size() > up.boundary.size() * 2)
                     up.buffer = up.buffer.substr(up.buffer.size() - up.boundary.size() * 2);
-                return 1; // Need more data
+                return 1;
             }
             
-            // Check if it's the final boundary (--boundary--)
             size_t afterBound = boundPos + up.boundary.size();
             if (afterBound + 2 <= up.buffer.size() && 
                 up.buffer.substr(afterBound, 2) == "--")
@@ -162,7 +155,6 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
                 return 0;
             }
             
-            // Skip to after boundary + CRLF
             if (afterBound + 2 <= up.buffer.size() && 
                 up.buffer.substr(afterBound, 2) == lineEnd)
             {
@@ -171,22 +163,21 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
             }
             else
             {
-                return 1; // Need more data
+                return 1;
             }
         }
         
         if (up.phase == UploadState::PARSING_PART_HEADERS)
         {
-            // Look for end of headers
             size_t headEnd = up.buffer.find(headerEnd);
             if (headEnd == std::string::npos)
             {
-                if (up.buffer.size() > 4096) // Headers too large
+                if (up.buffer.size() > 4096)
                 {
                     client.response.statusCode = 400;
                     return -1;
                 }
-                return 1; // Need more data
+                return 1;
             }
             
             std::string headers = up.buffer.substr(0, headEnd);
@@ -194,13 +185,11 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
             
             if (up.filename.empty())
             {
-                // Skip this part (not a file), look for next boundary
                 up.buffer = up.buffer.substr(headEnd + headerEnd.size());
                 up.phase = UploadState::WAITING_HEADERS;
                 continue;
             }
             
-            // Open file for streaming
             up.uploadPath = location.getUploadPath();
             if (up.uploadPath.empty())
                 up.uploadPath = "./upload/";
@@ -211,7 +200,6 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
             up.file.open(fullPath.c_str(), std::ios::binary | std::ios::trunc);
             if (!up.file.is_open())
             {
-                std::cerr << "\033[31m[UPLOAD ERROR]\033[0m Cannot open file: " << fullPath << std::endl;
                 client.response.statusCode = 500;
                 return -1;
             }
@@ -224,12 +212,10 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
         
         if (up.phase == UploadState::STREAMING_CONTENT)
         {
-            // Look for boundary in buffer
             size_t boundPos = up.buffer.find(up.boundary);
             
             if (boundPos != std::string::npos)
             {
-                // Found boundary, write everything before it (minus CRLF)
                 size_t writeEnd = boundPos;
                 if (writeEnd >= 2 && up.buffer.substr(writeEnd - 2, 2) == lineEnd)
                     writeEnd -= 2;
@@ -240,7 +226,6 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
                 up.file.close();
                 std::cout << "\033[32m[UPLOAD]\033[0m File complete: " << up.filename << std::endl;
                 
-                // Move past boundary
                 up.buffer = up.buffer.substr(boundPos);
                 up.filename.clear();
                 up.phase = UploadState::WAITING_HEADERS;
@@ -248,15 +233,14 @@ static int processStreamingUpload(Client &client, const char* data, size_t len, 
             }
             else
             {
-                // No boundary found, write data but keep enough for boundary detection
-                size_t safeLen = up.boundary.size() + 4; // boundary + CRLF + margin
+                size_t safeLen = up.boundary.size() + 4;
                 if (up.buffer.size() > safeLen)
                 {
                     size_t writeLen = up.buffer.size() - safeLen;
                     up.file.write(up.buffer.data(), writeLen);
                     up.buffer = up.buffer.substr(writeLen);
                 }
-                return 1; // Need more data
+                return 1;
             }
         }
         
@@ -404,17 +388,11 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     if (isCgiRequest(client.request.path, location) && !location.getCgiPath().empty())
     {
         std::cout << "\033[35m[CGI]\033[0m Starting " << client.request.path << std::endl;
-        // Start async CGI - will register pipes with epoll
         if (!startCgi(client, *client.server_ptr, epoll_fd))
         {
-            std::cerr << "\033[31m[CGI ERROR]\033[0m Failed to start CGI for " 
-                      << client.request.path << std::endl;
-            // CGI failed to start
             client.error();
             return;
         }
-        // CGI started - remove client from epoll until CGI completes
-        // The CGI pipes are registered with epoll, checkCgiStatus will re-add client
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
         return;
     }
@@ -451,11 +429,9 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
         if (!client.request.multipart)
             client.response.uploadBody();
         
-        // Set 201 Created for successful uploads
         if (client.response.statusCode == 200)
             client.response.statusCode = 201;
         
-        // Send simple status page for POST success
         logRequest(client.response.statusCode, client.request.methodName, client.request.rawPath);
         client.sendStatusPage();
         return;
@@ -498,18 +474,15 @@ static int readPostBody(Client &client, int epoll_fd, std::map<int, Client> &cli
     
     if (bytes_read < 0)
     {
-        // EAGAIN/EWOULDBLOCK - no data available yet, wait for more
         return 1;
     }
     
     if (bytes_read == 0)
     {
-        // Connection closed
         closeClient(epoll_fd, clients, client.client_fd);
         return -1;
     }
     
-    // Use streaming for multipart uploads
     if (client.upload.active)
     {
         if (!client.server_ptr)
@@ -520,32 +493,29 @@ static int readPostBody(Client &client, int epoll_fd, std::map<int, Client> &cli
         Location &location = client.server_ptr->getLocation(client.request.rawPath);
         int result = processStreamingUpload(client, buffer, bytes_read, location);
         
-        if (result == 0) // Done
+        if (result == 0)
         {
             client.request.full = true;
             client.upload.reset();
             return 0;
         }
-        else if (result < 0) // Error
+        else if (result < 0)
         {
             client.upload.reset();
             return -1;
         }
         
-        // Check if all bytes received
         if (client.upload.bytesReceived >= client.response.contentLength)
         {
             client.request.full = true;
-            // Process any remaining buffer
             processStreamingUpload(client, "", 0, location);
             client.upload.reset();
             return 0;
         }
         
-        return 1; // Need more data
+        return 1;
     }
     
-    // Non-streaming (small requests or non-multipart)
     client.response.body.append(buffer, bytes_read);
     client.request.body.append(buffer, bytes_read);
     
@@ -592,14 +562,13 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
         
         client.entry.append(buffer, bytes_read);
         
-        // Limit header size to prevent DoS (max 16KB for headers)
         static const size_t MAX_HEADER_SIZE = 16384;
         if (client.entry.size() > MAX_HEADER_SIZE && 
             client.entry.find("\r\n\r\n") == std::string::npos)
         {
             std::cerr << "\033[31m[REJECTED]\033[0m Headers too large (" 
                       << client.entry.size() << " bytes)" << std::endl;
-            client.response.statusCode = 431; // Request Header Fields Too Large
+            client.response.statusCode = 431;
             struct epoll_event ev;
             ev.events = EPOLLOUT;
             ev.data.fd = client.client_fd;
@@ -607,13 +576,10 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
             return;
         }
         
-        // Quick validation: check if first line looks like HTTP
         if (client.entry.size() > 0 && client.entry.find("\r\n") != std::string::npos)
         {
-            // Check for null bytes (binary/garbage data)
             if (client.entry.find('\0') != std::string::npos)
             {
-                std::cerr << "\033[31m[REJECTED]\033[0m Binary/malformed data detected" << std::endl;
                 closeClient(epoll_fd, clients, client.client_fd);
                 return;
             }
@@ -622,7 +588,6 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
         if (!parseRequestHeaders(client, server))
             return;
         
-        // Check if parsing resulted in an error
         if (client.response.statusCode >= 400)
         {
             struct epoll_event ev;
@@ -636,7 +601,6 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
     if ((client.response.statusCode == 200 || client.response.statusCode == 201) &&
         client.request.methodName == "POST" && !client.request.full)
     {
-        // Initialize streaming upload for multipart
         if (client.request.multipart && !client.upload.active && !client.request.boundary.empty())
         {
             client.upload.active = true;
@@ -644,7 +608,6 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
             client.upload.contentLength = client.response.contentLength;
             client.upload.phase = UploadState::WAITING_HEADERS;
             
-            // Process any body data already in entry buffer
             if (server)
             {
                 size_t headerEnd = client.entry.find("\r\n\r\n");
@@ -655,7 +618,6 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
                     processStreamingUpload(client, initialBody.c_str(), initialBody.size(), location);
                     client.upload.bytesReceived = initialBody.size();
                     
-                    // If all data already received, mark as complete
                     if (client.upload.bytesReceived >= client.upload.contentLength)
                     {
                         client.request.full = true;
@@ -665,10 +627,8 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
             }
         }
         
-        // Only read more if we don't have all the data yet
         if (client.request.full)
         {
-            // Already have all data, skip to response
             client.time = std::time(NULL);
             struct epoll_event ev;
             ev.events = EPOLLOUT;
@@ -681,7 +641,6 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
         if (result == -1)
             return;
         
-        // Only use old handleMultipart for non-streaming (small files)
         if (client.request.multipart && !client.upload.active)
         {
             Location &location = server->getLocation(client.request.rawPath);
@@ -711,11 +670,9 @@ static void handleWriteEvent(int fd, int epoll_fd, std::map<int, Client> &client
     
     Client &client = it->second;
     
-    // If CGI is active, wait for it to complete
     if (client.cgi.active)
         return;
     
-    // If CGI completed, send CGI response
     if (client.cgi.done)
     {
         sendCgiResponse(client);
@@ -786,7 +743,6 @@ void multiple(std::vector<HttpServer> &servers)
                 continue;
             }
             
-            // Check if this is a CGI pipe fd
             std::map<int, int>::iterator cgiIt = g_cgiPipeToClient.find(fd);
             if (cgiIt != g_cgiPipeToClient.end())
             {
@@ -798,7 +754,6 @@ void multiple(std::vector<HttpServer> &servers)
                     
                     if (evts & (EPOLLERR | EPOLLHUP))
                     {
-                        // Read any remaining data before cleanup
                         if (client.cgi.pipeOut != -1 && fd == client.cgi.pipeOut)
                         {
                             char buffer[8192];
@@ -809,7 +764,6 @@ void multiple(std::vector<HttpServer> &servers)
                             }
                         }
                         
-                        // Parse output BEFORE cleanup (cleanup resets outputBuffer)
                         if (!client.cgi.outputBuffer.empty())
                         {
                             parseCgiOutput(client);
@@ -819,13 +773,9 @@ void multiple(std::vector<HttpServer> &servers)
                             client.response.statusCode = 500;
                         }
                         
-                        // Cleanup CGI
                         cleanupCgi(client, epoll_fd);
-                        
-                        // Mark CGI as done
                         client.cgi.done = true;
                         
-                        // Re-add client to epoll to send response
                         struct epoll_event ev_tmp;
                         ev_tmp.events = EPOLLOUT;
                         ev_tmp.data.fd = client.client_fd;
@@ -833,12 +783,10 @@ void multiple(std::vector<HttpServer> &servers)
                     }
                     else if (evts & EPOLLIN)
                     {
-                        // CGI output ready to read
                         handleCgiRead(client, epoll_fd);
                     }
                     else if (evts & EPOLLOUT)
                     {
-                        // CGI input ready to write
                         handleCgiWrite(client, epoll_fd);
                     }
                 }
