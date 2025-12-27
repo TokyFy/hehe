@@ -141,15 +141,14 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     int pipeIn[2] = {-1, -1};
     int pipeOut[2] = {-1, -1};
     
-    // Use pipe2 with O_NONBLOCK to avoid fcntl
-    if (pipe2(pipeIn, O_NONBLOCK) == -1)
+    if (pipe(pipeIn) == -1)
     {
         freeCharArray(env);
         client.response.statusCode = 500;
         return false;
     }
     
-    if (pipe2(pipeOut, O_NONBLOCK) == -1)
+    if (pipe(pipeOut) == -1)
     {
         close(pipeIn[0]);
         close(pipeIn[1]);

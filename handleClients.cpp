@@ -66,8 +66,7 @@ static void acceptNewClient(int server_fd, int epoll_fd,
                             std::map<int, Client> &clients, 
                             HttpServer* server)
 {
-    // Use accept4 with SOCK_NONBLOCK to avoid fcntl
-    int client_fd = accept4(server_fd, NULL, NULL, SOCK_NONBLOCK);
+    int client_fd = accept(server_fd, NULL, NULL);
     if (client_fd < 0)
     {
         std::cerr << "accept() failed: " << strerror(errno) << std::endl;
