@@ -2,35 +2,29 @@
 <html>
 <head>
     <title>Upload Test</title>
+    <style>
+        body {
+            font-family : monospace;
+        }
+    </style>
 </head>
 <body>
-    <h1>File Upload Test</h1>
+    <img src="/favicon.ico" alt="Description of the image">
+    <br/>
+    <b>webserv 0.1</b>
+    <br/>
+    <p>Single File Upload</p>
+    <hr>
+    <br/>
     
-    <h2>Single File Upload</h2>
     <form action="/public/" method="POST" enctype="multipart/form-data">
         <input type="file" name="file">
         <button type="submit">Upload</button>
     </form>
+    <br/>
 
     <hr>
 
-    <h2>Multiple Files Upload</h2>
-    <form action="/public/" method="POST" enctype="multipart/form-data">
-        <input type="file" name="files" multiple>
-        <button type="submit">Upload All</button>
-    </form>
-
-    <hr>
-
-    <h2>Upload with Text Field</h2>
-    <form action="/public/" method="POST" enctype="multipart/form-data">
-        <label>Description: <input type="text" name="description"></label><br><br>
-        <input type="file" name="file">
-        <button type="submit">Upload</button>
-    </form>
-
-    <hr>
-
-    <p><a href="/public/">View uploaded files</a></p>
+    <p><a href="/media/">View uploaded files</a></p>
 </body>
 </html>

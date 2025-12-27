@@ -197,9 +197,10 @@ void Client::sendStatusPage()
         std::stringstream defaultHtml;
         defaultHtml << "<html><head>";
         defaultHtml << "<title>" << response.statusCode << " " << response.getStatusMessage() << "</title>";
-        defaultHtml << "<style> body { font-family: monospace; text-align: center; margin-top: 50px; } </style>";
+        defaultHtml << "<style> body { font-family: monospace;} </style>";
         defaultHtml << "</head><body>";
-        defaultHtml << "<h1>" << itos(response.statusCode) << " - " << response.getStatusMessage() << "</h1>";
+        defaultHtml << "<img src=\"/favicon.ico\"><br/><br/>";
+        defaultHtml << "<b>" << itos(response.statusCode) << " - " << response.getStatusMessage() << "</b>";
         if (response.statusCode >= 400)
             defaultHtml << "<p>An error occurred.</p>";
         else if (response.statusCode == 201)
