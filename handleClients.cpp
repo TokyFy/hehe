@@ -117,10 +117,10 @@ static std::string sanitizeFilename(const std::string& filename)
     for (size_t i = 0; i < filename.size(); i++)
     {
         unsigned char c = filename[i];
-        if (c == ' ')
-            result += '_';
-        else if (c >= 32 && c < 127 && c != '/' && c != '\\')
+        if (c >= 32 && c < 127 && c != '/' && c != '\\')
             result += c;
+        else
+            result += '_';
     }
     if (result.empty())
         result = "uploaded_file";
