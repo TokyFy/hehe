@@ -61,12 +61,18 @@ int     Client::checkHead(void)
     {
         std::string length = request.getPair("Content-Length");
         if (length.empty())
+        {
+            std::cerr << "\033[31m[REJECTED]\033[0m POST request missing Content-Length header" << std::endl;
             response.statusCode = 411;
+        }
         else
             response.contentLength = std::atoi(length.c_str());
         
         if (server_ptr && static_cast<ssize_t>(response.contentLength) > server_ptr->getClientMaxBodySize())
         {
+            std::cerr << "\033[31m[REJECTED]\033[0m Request body too large: " 
+                      << response.contentLength << " bytes (max: " 
+                      << server_ptr->getClientMaxBodySize() << " bytes)" << std::endl;
             response.statusCode = 413;
         }
     }

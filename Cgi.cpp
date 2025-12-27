@@ -437,6 +437,8 @@ void checkCgiStatus(std::map<int, Client> &clients, int epoll_fd)
         // Check timeout
         if (now - client.cgi.startTime >= CGI_TIMEOUT_SEC)
         {
+            std::cerr << "\033[33m[CGI TIMEOUT]\033[0m CGI process pid=" << client.cgi.pid 
+                      << " killed after " << CGI_TIMEOUT_SEC << "s" << std::endl;
             cleanupCgi(client, epoll_fd);
             client.response.statusCode = 504; // Gateway Timeout
             client.cgi.done = true;

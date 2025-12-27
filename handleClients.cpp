@@ -80,6 +80,8 @@ static void acceptNewClient(int server_fd, int epoll_fd,
     client.time = std::time(NULL);
     clients.insert(std::make_pair(client_fd, client));
     
+    std::cout << "\033[36m[CONNECT]\033[0m New client fd=" << client_fd << std::endl;
+    
     struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP;
     ev.data.fd = client_fd;
@@ -101,7 +103,11 @@ void checkTimeout(std::map<int, Client> &clients, int epoll_fd)
     {
         time_t duration = now - static_cast<time_t>(it->second.time);
         if (duration >= CLIENT_TIMEOUT_SEC)
+        {
+            std::cerr << "\033[33m[TIMEOUT]\033[0m Client fd=" << it->first 
+                      << " timed out after " << duration << "s of inactivity" << std::endl;
             toRemove.push_back(it->first);
+        }
     }
     
     for (size_t i = 0; i < toRemove.size(); i++)
@@ -248,6 +254,8 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     
     if (!location.isAllowedMethod(client.request.methodName))
     {
+        std::cerr << "\033[31m[REJECTED]\033[0m Method " << client.request.methodName 
+                  << " not allowed on " << client.request.rawPath << std::endl;
         client.response.statusCode = 405;
         client.error();
         return;
@@ -255,9 +263,12 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     
     if (isCgiRequest(client.request.path, location) && !location.getCgiPath().empty())
     {
+        std::cout << "\033[35m[CGI]\033[0m Starting " << client.request.path << std::endl;
         // Start async CGI - will register pipes with epoll
         if (!startCgi(client, *client.server_ptr, epoll_fd))
         {
+            std::cerr << "\033[31m[CGI ERROR]\033[0m Failed to start CGI for " 
+                      << client.request.path << std::endl;
             // CGI failed to start
             client.error();
             return;
