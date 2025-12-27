@@ -61,13 +61,18 @@
 | www/public/upload.html | 30 |
 | www/index.html | 24 |
 
-## Other Files - 98 lines
+## Python Files - 17 lines
+
+| File | Lines |
+|------|-------|
+| www/bin/test.py | 17 |
+
+## Other Files - 81 lines
 
 | File | Lines |
 |------|-------|
 | www/conf/default.conf | 44 |
 | Makefile | 30 |
-| www/bin/test.py | 17 |
 | .gitignore | 7 |
 
 ## Largest Files
