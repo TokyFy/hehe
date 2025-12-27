@@ -76,14 +76,15 @@ int     Client::checkHead(void)
             response.statusCode = 413;
         }
     }
+    request.checkMultipart();
     pos = entry.find("\r\n\r\n");
     if ((pos + 4))
     {
         response.body = entry.substr(pos + 4);
-        if (response.body.size() == response.contentLength)
+        // Don't mark as full for multipart - let streaming handle it
+        if (!request.multipart && response.body.size() == response.contentLength)
             request.full = true;
     }
-    request.checkMultipart();
     set();
     return (0);
 }

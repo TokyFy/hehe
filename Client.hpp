@@ -51,6 +51,38 @@ struct CgiState
     }
 };
 
+// Upload state for streaming large files
+struct UploadState
+{
+    enum Phase { WAITING_HEADERS, PARSING_PART_HEADERS, STREAMING_CONTENT, DONE };
+    
+    Phase           phase;
+    std::string     boundary;
+    std::string     buffer;         // Small buffer for boundary detection
+    std::string     filename;
+    std::string     uploadPath;
+    std::ofstream   file;
+    size_t          bytesReceived;
+    size_t          contentLength;
+    bool            active;
+    
+    UploadState() : phase(WAITING_HEADERS), bytesReceived(0), contentLength(0), active(false) {}
+    
+    void reset()
+    {
+        phase = WAITING_HEADERS;
+        boundary.clear();
+        buffer.clear();
+        filename.clear();
+        uploadPath.clear();
+        if (file.is_open())
+            file.close();
+        bytesReceived = 0;
+        contentLength = 0;
+        active = false;
+    }
+};
+
 class Client
 {
     public:
@@ -63,6 +95,7 @@ class Client
         HttpRequest     request;
         HttpResponse    response;
         CgiState        cgi;
+        UploadState     upload;
 
         Client(void);
         Client(Client const &to_copy);

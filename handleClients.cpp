@@ -129,6 +129,146 @@ static std::string extractFilename(const std::string& header)
     return header.substr(pos, endPos - pos);
 }
 
+// Streaming upload - writes directly to disk without loading entire file in memory
+static int processStreamingUpload(Client &client, const char* data, size_t len, const Location &location)
+{
+    UploadState &up = client.upload;
+    up.buffer.append(data, len);
+    up.bytesReceived += len;
+    
+    const std::string headerEnd = "\r\n\r\n";
+    const std::string lineEnd = "\r\n";
+    
+    while (true)
+    {
+        if (up.phase == UploadState::WAITING_HEADERS)
+        {
+            // Look for the first boundary
+            size_t boundPos = up.buffer.find(up.boundary);
+            if (boundPos == std::string::npos)
+            {
+                // Keep only last boundary-length bytes in buffer
+                if (up.buffer.size() > up.boundary.size() * 2)
+                    up.buffer = up.buffer.substr(up.buffer.size() - up.boundary.size() * 2);
+                return 1; // Need more data
+            }
+            
+            // Check if it's the final boundary (--boundary--)
+            size_t afterBound = boundPos + up.boundary.size();
+            if (afterBound + 2 <= up.buffer.size() && 
+                up.buffer.substr(afterBound, 2) == "--")
+            {
+                up.phase = UploadState::DONE;
+                return 0;
+            }
+            
+            // Skip to after boundary + CRLF
+            if (afterBound + 2 <= up.buffer.size() && 
+                up.buffer.substr(afterBound, 2) == lineEnd)
+            {
+                up.buffer = up.buffer.substr(afterBound + 2);
+                up.phase = UploadState::PARSING_PART_HEADERS;
+            }
+            else
+            {
+                return 1; // Need more data
+            }
+        }
+        
+        if (up.phase == UploadState::PARSING_PART_HEADERS)
+        {
+            // Look for end of headers
+            size_t headEnd = up.buffer.find(headerEnd);
+            if (headEnd == std::string::npos)
+            {
+                if (up.buffer.size() > 4096) // Headers too large
+                {
+                    client.response.statusCode = 400;
+                    return -1;
+                }
+                return 1; // Need more data
+            }
+            
+            std::string headers = up.buffer.substr(0, headEnd);
+            up.filename = extractFilename(headers);
+            
+            if (up.filename.empty())
+            {
+                // Skip this part (not a file), look for next boundary
+                up.buffer = up.buffer.substr(headEnd + headerEnd.size());
+                up.phase = UploadState::WAITING_HEADERS;
+                continue;
+            }
+            
+            // Open file for streaming
+            up.uploadPath = location.getUploadPath();
+            if (up.uploadPath.empty())
+                up.uploadPath = "./upload/";
+            if (up.uploadPath[up.uploadPath.size() - 1] != '/')
+                up.uploadPath += "/";
+            
+            std::string fullPath = up.uploadPath + up.filename;
+            up.file.open(fullPath.c_str(), std::ios::binary | std::ios::trunc);
+            if (!up.file.is_open())
+            {
+                std::cerr << "\033[31m[UPLOAD ERROR]\033[0m Cannot open file: " << fullPath << std::endl;
+                client.response.statusCode = 500;
+                return -1;
+            }
+            
+            std::cout << "\033[32m[UPLOAD]\033[0m Streaming to: " << fullPath << std::endl;
+            
+            up.buffer = up.buffer.substr(headEnd + headerEnd.size());
+            up.phase = UploadState::STREAMING_CONTENT;
+        }
+        
+        if (up.phase == UploadState::STREAMING_CONTENT)
+        {
+            // Look for boundary in buffer
+            size_t boundPos = up.buffer.find(up.boundary);
+            
+            if (boundPos != std::string::npos)
+            {
+                // Found boundary, write everything before it (minus CRLF)
+                size_t writeEnd = boundPos;
+                if (writeEnd >= 2 && up.buffer.substr(writeEnd - 2, 2) == lineEnd)
+                    writeEnd -= 2;
+                
+                if (writeEnd > 0)
+                    up.file.write(up.buffer.data(), writeEnd);
+                
+                up.file.close();
+                std::cout << "\033[32m[UPLOAD]\033[0m File complete: " << up.filename << std::endl;
+                
+                // Move past boundary
+                up.buffer = up.buffer.substr(boundPos);
+                up.filename.clear();
+                up.phase = UploadState::WAITING_HEADERS;
+                continue;
+            }
+            else
+            {
+                // No boundary found, write data but keep enough for boundary detection
+                size_t safeLen = up.boundary.size() + 4; // boundary + CRLF + margin
+                if (up.buffer.size() > safeLen)
+                {
+                    size_t writeLen = up.buffer.size() - safeLen;
+                    up.file.write(up.buffer.data(), writeLen);
+                    up.buffer = up.buffer.substr(writeLen);
+                }
+                return 1; // Need more data
+            }
+        }
+        
+        if (up.phase == UploadState::DONE)
+        {
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
 static void handleMultipart(Client &client, const Location &location)
 {
     const std::string boundary = client.request.boundary;
@@ -310,6 +450,10 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
         if (!client.request.multipart)
             client.response.uploadBody();
         
+        // Set 201 Created for successful uploads
+        if (client.response.statusCode == 200)
+            client.response.statusCode = 201;
+        
         // Send simple status page for POST success
         logRequest(client.response.statusCode, client.request.methodName, client.request.rawPath);
         client.sendStatusPage();
@@ -351,16 +495,58 @@ static int readPostBody(Client &client, int epoll_fd, std::map<int, Client> &cli
     char buffer[READ_BUFFER_SIZE];
     ssize_t bytes_read = recv(client.client_fd, buffer, sizeof(buffer) , MSG_NOSIGNAL);
     
-    if (bytes_read > 0)
+    if (bytes_read < 0)
     {
-        client.response.body.append(buffer, bytes_read);
-        client.request.body.append(buffer, bytes_read);
+        // EAGAIN/EWOULDBLOCK - no data available yet, wait for more
+        return 1;
     }
-    else if (bytes_read <= 0)
+    
+    if (bytes_read == 0)
     {
+        // Connection closed
         closeClient(epoll_fd, clients, client.client_fd);
         return -1;
     }
+    
+    // Use streaming for multipart uploads
+    if (client.upload.active)
+    {
+        if (!client.server_ptr)
+        {
+            client.response.statusCode = 500;
+            return -1;
+        }
+        Location &location = client.server_ptr->getLocation(client.request.rawPath);
+        int result = processStreamingUpload(client, buffer, bytes_read, location);
+        
+        if (result == 0) // Done
+        {
+            client.request.full = true;
+            client.upload.reset();
+            return 0;
+        }
+        else if (result < 0) // Error
+        {
+            client.upload.reset();
+            return -1;
+        }
+        
+        // Check if all bytes received
+        if (client.upload.bytesReceived >= client.response.contentLength)
+        {
+            client.request.full = true;
+            // Process any remaining buffer
+            processStreamingUpload(client, "", 0, location);
+            client.upload.reset();
+            return 0;
+        }
+        
+        return 1; // Need more data
+    }
+    
+    // Non-streaming (small requests or non-multipart)
+    client.response.body.append(buffer, bytes_read);
+    client.request.body.append(buffer, bytes_read);
     
     if (client.response.body.size() >= client.response.contentLength)
     {
@@ -412,11 +598,53 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
     if ((client.response.statusCode == 200 || client.response.statusCode == 201) &&
         client.request.methodName == "POST" && !client.request.full)
     {
+        // Initialize streaming upload for multipart
+        if (client.request.multipart && !client.upload.active && !client.request.boundary.empty())
+        {
+            client.upload.active = true;
+            client.upload.boundary = client.request.boundary;
+            client.upload.contentLength = client.response.contentLength;
+            client.upload.phase = UploadState::WAITING_HEADERS;
+            
+            // Process any body data already in entry buffer
+            if (server)
+            {
+                size_t headerEnd = client.entry.find("\r\n\r\n");
+                if (headerEnd != std::string::npos && headerEnd + 4 < client.entry.size())
+                {
+                    std::string initialBody = client.entry.substr(headerEnd + 4);
+                    Location &location = server->getLocation(client.request.rawPath);
+                    processStreamingUpload(client, initialBody.c_str(), initialBody.size(), location);
+                    client.upload.bytesReceived = initialBody.size();
+                    
+                    // If all data already received, mark as complete
+                    if (client.upload.bytesReceived >= client.upload.contentLength)
+                    {
+                        client.request.full = true;
+                        client.upload.reset();
+                    }
+                }
+            }
+        }
+        
+        // Only read more if we don't have all the data yet
+        if (client.request.full)
+        {
+            // Already have all data, skip to response
+            client.time = std::time(NULL);
+            struct epoll_event ev;
+            ev.events = EPOLLOUT;
+            ev.data.fd = client.client_fd;
+            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client.client_fd, &ev);
+            return;
+        }
+        
         int result = readPostBody(client, epoll_fd, clients);
         if (result == -1)
             return;
         
-        if (client.request.multipart)
+        // Only use old handleMultipart for non-streaming (small files)
+        if (client.request.multipart && !client.upload.active)
         {
             Location &location = server->getLocation(client.request.rawPath);
             handleMultipart(client, location);
