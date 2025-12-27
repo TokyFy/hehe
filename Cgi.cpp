@@ -237,7 +237,7 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
                     ssize_t written = write(pipeIn[1], bodyData + totalWritten, bodySize - totalWritten);
                     if (written > 0)
                         totalWritten += written;
-                    else if (written == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
+                    else if (written < 0)
                         break;
                 }
                 else if (ready == 0)
@@ -251,9 +251,6 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
             }
         }
         close(pipeIn[1]);
-        
-        // Set read pipe to non-blocking
-        setNonBlocking(pipeOut[0]);
         
         char buffer[8192];
         std::string cgi_output;

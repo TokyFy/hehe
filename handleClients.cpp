@@ -13,6 +13,7 @@
 #include "handleClients.hpp"
 #include "Cgi.hpp"
 #include <string>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <cerrno>
@@ -68,8 +69,7 @@ static void acceptNewClient(int server_fd, int epoll_fd,
     int client_fd = accept(server_fd, NULL, NULL);
     if (client_fd < 0)
     {
-        if (errno != EAGAIN && errno != EWOULDBLOCK)
-            std::cerr << "accept() failed: " << strerror(errno) << std::endl;
+        std::cerr << "accept() failed: " << strerror(errno) << std::endl;
         return;
     }
     
@@ -346,19 +346,14 @@ static bool parseRequestHeaders(Client &client, HttpServer *server)
 static int readPostBody(Client &client, int epoll_fd, std::map<int, Client> &clients)
 {
     char buffer[READ_BUFFER_SIZE];
-    ssize_t bytes_read = read(client.client_fd, buffer, sizeof(buffer));
+    ssize_t bytes_read = recv(client.client_fd, buffer, sizeof(buffer) , MSG_NOSIGNAL);
     
     if (bytes_read > 0)
     {
         client.response.body.append(buffer, bytes_read);
         client.request.body.append(buffer, bytes_read);
     }
-    else if (bytes_read == 0)
-    {
-        closeClient(epoll_fd, clients, client.client_fd);
-        return -1;
-    }
-    else if (errno != EAGAIN && errno != EWOULDBLOCK)
+    else if (bytes_read <= 0)
     {
         closeClient(epoll_fd, clients, client.client_fd);
         return -1;
@@ -397,15 +392,11 @@ static void handleReadEvent(int fd, int epoll_fd, std::map<int, Client> &clients
     if (!client.request.fullHeader)
     {
         char buffer[READ_BUFFER_SIZE];
-        ssize_t bytes_read = read(client.client_fd, buffer, sizeof(buffer));
+        ssize_t bytes_read = recv(client.client_fd, buffer, sizeof(buffer) , MSG_NOSIGNAL);
         
         if (bytes_read <= 0)
         {
-            if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
-            {
-                closeClient(epoll_fd, clients, client.client_fd);
-                return;
-            }
+            closeClient(epoll_fd, clients, client.client_fd);
             return;
         }
         
@@ -492,8 +483,6 @@ void multiple(std::vector<HttpServer> &servers)
         
         if (nfds == -1)
         {
-            if (errno == EINTR)
-                continue;
             std::cerr << "epoll_wait error: " << strerror(errno) << std::endl;
             break;
         }
