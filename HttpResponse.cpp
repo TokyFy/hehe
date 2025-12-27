@@ -172,8 +172,7 @@ void    HttpResponse::deleteMethod(std::string path)
     status = remove(path.c_str());
     if (status != 0)
     {
-        if (errno == ENOTDIR || errno == ENOTEMPTY)
-            statusCode = 409;
+        statusCode = 409;
     }
 }
 

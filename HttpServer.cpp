@@ -126,11 +126,10 @@ void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
     }
 
     // Set server socket to non-blocking
-    int flags = fcntl(server_fd, F_GETFL, 0);
-    if (flags == -1 || fcntl(server_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
     {
         close(server_fd);
-        throw std::runtime_error(std::string("fcntl failed: ") + strerror(errno));
+        throw std::runtime_error("fcntl failed");
     }
 
     sockaddr_in addr;

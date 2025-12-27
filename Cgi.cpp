@@ -6,7 +6,7 @@
 /*   By: sranaivo <sranaivo@student.42antananarivo. +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/12/18 20:43:31 by sranaivo          #+#    #+#             */
-/*   Updated: 2025/12/26 00:00:00 by sranaivo         ###   ########.fr       */
+/*   Updated: 2025/12/27 00:00:00 by sranaivo         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,9 +19,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <signal.h>
-#include <sys/select.h>
+#include <ctime>
+
+static const int CGI_TIMEOUT_SEC = 30;
+
+// Global map: pipe fd -> client fd
+std::map<int, int> g_cgiPipeToClient;
 
 char** vectorToCharArray(const std::vector<std::string> &vec)
 {
@@ -45,7 +49,7 @@ void freeCharArray(char** array)
     delete[] array;
 }
 
-char**  setupEnv(Client &client, HttpServer &server, std::string &script_path)
+char** setupEnv(Client &client, HttpServer &server, std::string &script_path)
 {
     std::vector<std::string> env;
 
@@ -88,27 +92,16 @@ char**  setupEnv(Client &client, HttpServer &server, std::string &script_path)
         env.push_back(key + "=" + it->second);
     }
     
-    return (vectorToCharArray(env));
+    return vectorToCharArray(env);
 }
 
 static bool setNonBlocking(int fd)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return false;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) != -1;
+    return fcntl(fd, F_SETFL, O_NONBLOCK) != -1;
 }
 
-void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_event &events)
+bool startCgi(Client &client, HttpServer &server, int epoll_fd)
 {
-    (void)epoll_fd;
-    (void)events;
-    
-    char **env = NULL;
-    int pipeIn[2] = {-1, -1};
-    int pipeOut[2] = {-1, -1};
-    pid_t pid;
-
     // Use rawPath for location matching, path for actual file
     Location &location = server.getLocation(client.request.rawPath);
     
@@ -132,17 +125,17 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
     if (access(location.getCgiPath().c_str(), X_OK) != 0)
     {
         client.response.statusCode = 500;
-        return;
+        return false;
     }
     
     // Check if script exists
     if (access(script_path.c_str(), R_OK) != 0)
     {
         client.response.statusCode = 404;
-        return;
+        return false;
     }
     
-    env = setupEnv(client, server, script_path);
+    char **env = setupEnv(client, server, script_path);
     
     char *argv[] = {
         const_cast<char *>(location.getCgiPath().c_str()), 
@@ -150,11 +143,14 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
         NULL
     };
     
+    int pipeIn[2] = {-1, -1};
+    int pipeOut[2] = {-1, -1};
+    
     if (pipe(pipeIn) == -1)
     {
         freeCharArray(env);
         client.response.statusCode = 500;
-        return;
+        return false;
     }
     
     if (pipe(pipeOut) == -1)
@@ -163,10 +159,10 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
         close(pipeIn[1]);
         freeCharArray(env);
         client.response.statusCode = 500;
-        return;
+        return false;
     }
     
-    pid = fork();
+    pid_t pid = fork();
     if (pid == -1)
     {
         close(pipeIn[0]);
@@ -175,7 +171,7 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
         close(pipeOut[1]);
         freeCharArray(env);
         client.response.statusCode = 500;
-        return;
+        return false;
     }
     
     if (pid == 0)
@@ -205,199 +201,316 @@ void handleCgi(Client &client, HttpServer &server, int &epoll_fd, struct epoll_e
         execve(location.getCgiPath().c_str(), argv, env);
         exit(1);
     }
+    
+    // Parent process
+    freeCharArray(env);
+    close(pipeIn[0]);
+    close(pipeOut[1]);
+    
+    // Set pipes to non-blocking
+    if (!setNonBlocking(pipeIn[1]) || !setNonBlocking(pipeOut[0]))
+    {
+        close(pipeIn[1]);
+        close(pipeOut[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        client.response.statusCode = 500;
+        return false;
+    }
+    
+    // Setup CGI state
+    client.cgi.active = true;
+    client.cgi.pid = pid;
+    client.cgi.pipeIn = pipeIn[1];
+    client.cgi.pipeOut = pipeOut[0];
+    client.cgi.startTime = std::time(NULL);
+    client.cgi.outputBuffer.clear();
+    client.cgi.inputOffset = 0;
+    
+    // Store POST body if any
+    if (client.request.methodName == "POST" && !client.request.body.empty())
+        client.cgi.inputBuffer = client.request.body;
+    else
+        client.cgi.inputBuffer.clear();
+    
+    // Register pipes with epoll
+    struct epoll_event ev;
+    
+    // Register output pipe for reading
+    ev.events = EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLHUP;
+    ev.data.fd = pipeOut[0];
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipeOut[0], &ev) == -1)
+    {
+        close(pipeIn[1]);
+        close(pipeOut[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        client.cgi.reset();
+        client.response.statusCode = 500;
+        return false;
+    }
+    g_cgiPipeToClient[pipeOut[0]] = client.client_fd;
+    
+    // Register input pipe for writing if we have data to send
+    if (!client.cgi.inputBuffer.empty())
+    {
+        ev.events = EPOLLOUT | EPOLLERR | EPOLLHUP;
+        ev.data.fd = pipeIn[1];
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipeIn[1], &ev) == -1)
+        {
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, pipeOut[0], NULL);
+            g_cgiPipeToClient.erase(pipeOut[0]);
+            close(pipeIn[1]);
+            close(pipeOut[0]);
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            client.cgi.reset();
+            client.response.statusCode = 500;
+            return false;
+        }
+        g_cgiPipeToClient[pipeIn[1]] = client.client_fd;
+    }
     else
     {
-        // Parent process
-        close(pipeIn[0]);
-        close(pipeOut[1]);
-        
-        // Write POST body to CGI stdin (non-blocking with timeout)
-        if (client.request.methodName == "POST" && !client.request.body.empty())
-        {
-            setNonBlocking(pipeIn[1]);
-            
-            size_t totalWritten = 0;
-            size_t bodySize = client.request.body.size();
-            const char* bodyData = client.request.body.c_str();
-            int writeTimeout = 0;
-            
-            while (totalWritten < bodySize && writeTimeout < 10)
-            {
-                fd_set writeFds;
-                FD_ZERO(&writeFds);
-                FD_SET(pipeIn[1], &writeFds);
-                
-                struct timeval tv;
-                tv.tv_sec = 1;
-                tv.tv_usec = 0;
-                
-                int ready = select(pipeIn[1] + 1, NULL, &writeFds, NULL, &tv);
-                if (ready > 0)
-                {
-                    ssize_t written = write(pipeIn[1], bodyData + totalWritten, bodySize - totalWritten);
-                    if (written > 0)
-                        totalWritten += written;
-                    else if (written < 0)
-                        break;
-                }
-                else if (ready == 0)
-                {
-                    writeTimeout++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
+        // No input to send, close write pipe immediately
         close(pipeIn[1]);
+        client.cgi.pipeIn = -1;
+    }
+    
+    return true;
+}
+
+void handleCgiWrite(Client &client, int epoll_fd)
+{
+    if (!client.cgi.active || client.cgi.pipeIn == -1)
+        return;
+    
+    size_t remaining = client.cgi.inputBuffer.size() - client.cgi.inputOffset;
+    if (remaining == 0)
+    {
+        // Done writing, close pipe
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
+        g_cgiPipeToClient.erase(client.cgi.pipeIn);
+        close(client.cgi.pipeIn);
+        client.cgi.pipeIn = -1;
+        return;
+    }
+    
+    const char *data = client.cgi.inputBuffer.c_str() + client.cgi.inputOffset;
+    ssize_t written = write(client.cgi.pipeIn, data, remaining);
+    
+    if (written > 0)
+    {
+        client.cgi.inputOffset += written;
         
-        char buffer[8192];
-        std::string cgi_output;
-        
-        // Read CGI output with timeout using select
-        int timeout = 0;
-        const int maxTimeout = 30; // 30 seconds max
-        
-        while (timeout < maxTimeout)
+        // Check if done
+        if (client.cgi.inputOffset >= client.cgi.inputBuffer.size())
         {
-            // Check if child has finished
-            int status;
-            int wait_result = waitpid(pid, &status, WNOHANG);
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
+            g_cgiPipeToClient.erase(client.cgi.pipeIn);
+            close(client.cgi.pipeIn);
+            client.cgi.pipeIn = -1;
+        }
+    }
+    else if (written < 0)
+    {
+        // Write error, close pipe
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
+        g_cgiPipeToClient.erase(client.cgi.pipeIn);
+        close(client.cgi.pipeIn);
+        client.cgi.pipeIn = -1;
+    }
+}
+
+void handleCgiRead(Client &client, int epoll_fd)
+{
+    if (!client.cgi.active || client.cgi.pipeOut == -1)
+        return;
+    
+    char buffer[8192];
+    ssize_t bytes_read = read(client.cgi.pipeOut, buffer, sizeof(buffer));
+    
+    if (bytes_read > 0)
+    {
+        client.cgi.outputBuffer.append(buffer, bytes_read);
+    }
+    else if (bytes_read == 0)
+    {
+        // EOF - CGI closed its stdout
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeOut, NULL);
+        g_cgiPipeToClient.erase(client.cgi.pipeOut);
+        close(client.cgi.pipeOut);
+        client.cgi.pipeOut = -1;
+    }
+    // bytes_read < 0: EAGAIN/EWOULDBLOCK, just wait for next event
+}
+
+void parseCgiOutput(Client &client)
+{
+    std::string &output = client.cgi.outputBuffer;
+    
+    // Parse CGI output
+    size_t header_end = output.find("\r\n\r\n");
+    if (header_end == std::string::npos)
+        header_end = output.find("\n\n");
+    
+    if (header_end != std::string::npos)
+    {
+        std::string cgi_headers = output.substr(0, header_end);
+        size_t body_start = (output.find("\r\n\r\n") != std::string::npos) 
+                            ? header_end + 4 : header_end + 2;
+        client.response.body = output.substr(body_start);
+        
+        // Check for Content-Type in CGI headers
+        if (cgi_headers.find("Content-Type:") == std::string::npos &&
+            cgi_headers.find("Content-type:") == std::string::npos)
+        {
+            client.response.mimeType = "html";
+        }
+        else
+        {
+            client.response.mimeType = "html";
+        }
+        
+        // Check for Status header in CGI output
+        size_t statusPos = cgi_headers.find("Status:");
+        if (statusPos != std::string::npos)
+        {
+            size_t statusEnd = cgi_headers.find("\n", statusPos);
+            std::string statusLine = cgi_headers.substr(statusPos + 7, statusEnd - statusPos - 7);
+            int cgiStatus = std::atoi(statusLine.c_str());
+            if (cgiStatus >= 100 && cgiStatus < 600)
+                client.response.statusCode = cgiStatus;
+            else
+                client.response.statusCode = 200;
+        }
+        else
+        {
+            client.response.statusCode = 200;
+        }
+    }
+    else
+    {
+        // No headers, treat entire output as body
+        client.response.body = output;
+        client.response.mimeType = "html";
+        client.response.statusCode = 200;
+    }
+    
+    client.response.contentLength = client.response.body.size();
+}
+
+void cleanupCgi(Client &client, int epoll_fd)
+{
+    if (!client.cgi.active)
+        return;
+    
+    // Remove pipes from epoll and close
+    if (client.cgi.pipeIn != -1)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
+        g_cgiPipeToClient.erase(client.cgi.pipeIn);
+        close(client.cgi.pipeIn);
+    }
+    
+    if (client.cgi.pipeOut != -1)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeOut, NULL);
+        g_cgiPipeToClient.erase(client.cgi.pipeOut);
+        close(client.cgi.pipeOut);
+    }
+    
+    // Kill and wait for child if still running
+    if (client.cgi.pid > 0)
+    {
+        int status;
+        int result = waitpid(client.cgi.pid, &status, WNOHANG);
+        if (result == 0)
+        {
+            // Still running, kill it
+            kill(client.cgi.pid, SIGKILL);
+            waitpid(client.cgi.pid, &status, 0);
+        }
+    }
+    
+    client.cgi.reset();
+}
+
+void checkCgiStatus(std::map<int, Client> &clients, int epoll_fd)
+{
+    time_t now = std::time(NULL);
+    
+    for (std::map<int, Client>::iterator it = clients.begin(); it != clients.end(); ++it)
+    {
+        Client &client = it->second;
+        
+        if (!client.cgi.active)
+            continue;
+        
+        // Check timeout
+        if (now - client.cgi.startTime >= CGI_TIMEOUT_SEC)
+        {
+            cleanupCgi(client, epoll_fd);
+            client.response.statusCode = 504; // Gateway Timeout
+            client.cgi.done = true;
             
-            if (wait_result > 0)
+            // Re-add client to epoll in write mode to send error response
+            struct epoll_event ev;
+            ev.events = EPOLLOUT;
+            ev.data.fd = client.client_fd;
+            epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client.client_fd, &ev);
+            continue;
+        }
+        
+        // Check if child has finished
+        if (client.cgi.pid > 0)
+        {
+            int status;
+            int result = waitpid(client.cgi.pid, &status, WNOHANG);
+            
+            if (result > 0)
             {
-                // Child finished, read remaining output
-                ssize_t bytes_read;
-                while ((bytes_read = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
+                // Child finished
+                client.cgi.pid = -1;
+                
+                // Close pipes - data should already have been read via epoll events
+                if (client.cgi.pipeOut != -1)
                 {
-                    cgi_output.append(buffer, bytes_read);
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeOut, NULL);
+                    g_cgiPipeToClient.erase(client.cgi.pipeOut);
+                    close(client.cgi.pipeOut);
+                    client.cgi.pipeOut = -1;
                 }
                 
-                close(pipeOut[0]);
-                freeCharArray(env);
+                // Close input pipe if still open
+                if (client.cgi.pipeIn != -1)
+                {
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.cgi.pipeIn, NULL);
+                    g_cgiPipeToClient.erase(client.cgi.pipeIn);
+                    close(client.cgi.pipeIn);
+                    client.cgi.pipeIn = -1;
+                }
                 
+                // Check exit status
                 if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
                 {
-                    // Parse CGI output
-                    size_t header_end = cgi_output.find("\r\n\r\n");
-                    if (header_end == std::string::npos)
-                        header_end = cgi_output.find("\n\n");
-                    
-                    if (header_end != std::string::npos)
-                    {
-                        std::string cgi_headers = cgi_output.substr(0, header_end);
-                        size_t body_start = (cgi_output.find("\r\n\r\n") != std::string::npos) 
-                                            ? header_end + 4 : header_end + 2;
-                        client.response.body = cgi_output.substr(body_start);
-                        
-                        // Check for Content-Type in CGI headers
-                        if (cgi_headers.find("Content-Type:") == std::string::npos &&
-                            cgi_headers.find("Content-type:") == std::string::npos)
-                        {
-                            client.response.mimeType = "html";
-                        }
-                        else
-                        {
-                            // Extract content type from CGI headers
-                            size_t ctPos = cgi_headers.find("Content-Type:");
-                            if (ctPos == std::string::npos)
-                                ctPos = cgi_headers.find("Content-type:");
-                            if (ctPos != std::string::npos)
-                            {
-                                size_t ctEnd = cgi_headers.find("\n", ctPos);
-                                std::string ct = cgi_headers.substr(ctPos + 13, ctEnd - ctPos - 13);
-                                // Trim whitespace
-                                size_t start = ct.find_first_not_of(" \t\r");
-                                if (start != std::string::npos)
-                                    ct = ct.substr(start);
-                                size_t end = ct.find_last_not_of(" \t\r");
-                                if (end != std::string::npos)
-                                    ct = ct.substr(0, end + 1);
-                                client.response.mimeType = "html"; // Default, the actual CT is handled
-                            }
-                        }
-                        
-                        // Check for Status header in CGI output
-                        size_t statusPos = cgi_headers.find("Status:");
-                        if (statusPos != std::string::npos)
-                        {
-                            size_t statusEnd = cgi_headers.find("\n", statusPos);
-                            std::string statusLine = cgi_headers.substr(statusPos + 7, statusEnd - statusPos - 7);
-                            int cgiStatus = std::atoi(statusLine.c_str());
-                            if (cgiStatus >= 100 && cgiStatus < 600)
-                                client.response.statusCode = cgiStatus;
-                            else
-                                client.response.statusCode = 200;
-                        }
-                        else
-                        {
-                            client.response.statusCode = 200;
-                        }
-                    }
-                    else
-                    {
-                        // No headers, treat entire output as body
-                        client.response.body = cgi_output;
-                        client.response.mimeType = "html";
-                        client.response.statusCode = 200;
-                    }
-                    client.response.contentLength = client.response.body.size();
+                    parseCgiOutput(client);
                 }
                 else
                 {
                     client.response.statusCode = 500;
                 }
-                return;
-            }
-            else if (wait_result == -1)
-            {
-                // Error
-                kill(pid, SIGKILL);
-                waitpid(pid, &status, 0);
-                close(pipeOut[0]);
-                freeCharArray(env);
-                client.response.statusCode = 500;
-                return;
-            }
-            
-            // Child still running, try to read available output
-            fd_set readFds;
-            FD_ZERO(&readFds);
-            FD_SET(pipeOut[0], &readFds);
-            
-            struct timeval tv;
-            tv.tv_sec = 1;
-            tv.tv_usec = 0;
-            
-            int ready = select(pipeOut[0] + 1, &readFds, NULL, NULL, &tv);
-            if (ready > 0)
-            {
-                ssize_t bytes_read = read(pipeOut[0], buffer, sizeof(buffer));
-                if (bytes_read > 0)
-                {
-                    cgi_output.append(buffer, bytes_read);
-                    timeout = 0; // Reset timeout since we got data
-                }
-            }
-            else if (ready == 0)
-            {
-                timeout++;
-            }
-            else
-            {
-                // Select error
-                timeout++;
+                
+                client.cgi.active = false;
+                client.cgi.done = true;
+                
+                // Re-add client to epoll in write mode to send response
+                struct epoll_event ev;
+                ev.events = EPOLLOUT;
+                ev.data.fd = client.client_fd;
+                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client.client_fd, &ev);
             }
         }
-        
-        // Timeout reached
-        kill(pid, SIGKILL);
-        int status;
-        waitpid(pid, &status, 0);
-        close(pipeOut[0]);
-        freeCharArray(env);
-        client.response.statusCode = 504; // Gateway Timeout
     }
 }
 

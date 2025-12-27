@@ -49,6 +49,14 @@ static HttpServer* findServerByFd(std::vector<HttpServer> &servers, int fd)
 
 static void closeClient(int epoll_fd, std::map<int, Client> &clients, int client_fd)
 {
+    std::map<int, Client>::iterator it = clients.find(client_fd);
+    if (it != clients.end())
+    {
+        // Clean up CGI if active
+        if (it->second.cgi.active)
+            cleanupCgi(it->second, epoll_fd);
+    }
+    
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
     close(client_fd);
     clients.erase(client_fd);
@@ -56,10 +64,7 @@ static void closeClient(int epoll_fd, std::map<int, Client> &clients, int client
 
 static bool setNonBlocking(int fd)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return false;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) != -1;
+    return fcntl(fd, F_SETFL, O_NONBLOCK) != -1;
 }
 
 static void acceptNewClient(int server_fd, int epoll_fd, 
@@ -259,15 +264,16 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     
     if (isCgiRequest(client.request.path, location) && !location.getCgiPath().empty())
     {
-        handleCgi(client, *client.server_ptr, epoll_fd, events);
-        
-        if (client.response.statusCode != 200)
+        // Start async CGI - will register pipes with epoll
+        if (!startCgi(client, *client.server_ptr, epoll_fd))
         {
+            // CGI failed to start
             client.error();
             return;
         }
-        
-        sendCgiResponse(client);
+        // CGI started - remove client from epoll until CGI completes
+        // The CGI pipes are registered with epoll, checkCgiStatus will re-add client
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client.client_fd, NULL);
         return;
     }
     
@@ -441,6 +447,20 @@ static void handleWriteEvent(int fd, int epoll_fd, std::map<int, Client> &client
         return;
     
     Client &client = it->second;
+    
+    // If CGI is active, wait for it to complete
+    if (client.cgi.active)
+        return;
+    
+    // If CGI completed, send CGI response
+    if (client.cgi.done)
+    {
+        sendCgiResponse(client);
+        if (client.response.full)
+            closeClient(epoll_fd, clients, client.client_fd);
+        return;
+    }
+    
     processResponse(clients, client, epoll_fd, events);
     
     if (client.response.full)
@@ -478,6 +498,7 @@ void multiple(std::vector<HttpServer> &servers)
     while (g_running)
     {
         checkTimeout(clients, epoll_fd);
+        checkCgiStatus(clients, epoll_fd);
         
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, EPOLL_TIMEOUT_MS);
         
@@ -499,6 +520,65 @@ void multiple(std::vector<HttpServer> &servers)
             if (server != NULL)
             {
                 acceptNewClient(fd, epoll_fd, clients, server);
+                continue;
+            }
+            
+            // Check if this is a CGI pipe fd
+            std::map<int, int>::iterator cgiIt = g_cgiPipeToClient.find(fd);
+            if (cgiIt != g_cgiPipeToClient.end())
+            {
+                int client_fd = cgiIt->second;
+                std::map<int, Client>::iterator clientIt = clients.find(client_fd);
+                if (clientIt != clients.end())
+                {
+                    Client &client = clientIt->second;
+                    
+                    if (evts & (EPOLLERR | EPOLLHUP))
+                    {
+                        // Read any remaining data before cleanup
+                        if (client.cgi.pipeOut != -1 && fd == client.cgi.pipeOut)
+                        {
+                            char buffer[8192];
+                            ssize_t bytes;
+                            while ((bytes = read(client.cgi.pipeOut, buffer, sizeof(buffer))) > 0)
+                            {
+                                client.cgi.outputBuffer.append(buffer, bytes);
+                            }
+                        }
+                        
+                        // Parse output BEFORE cleanup (cleanup resets outputBuffer)
+                        if (!client.cgi.outputBuffer.empty())
+                        {
+                            parseCgiOutput(client);
+                        }
+                        else
+                        {
+                            client.response.statusCode = 500;
+                        }
+                        
+                        // Cleanup CGI
+                        cleanupCgi(client, epoll_fd);
+                        
+                        // Mark CGI as done
+                        client.cgi.done = true;
+                        
+                        // Re-add client to epoll to send response
+                        struct epoll_event ev_tmp;
+                        ev_tmp.events = EPOLLOUT;
+                        ev_tmp.data.fd = client.client_fd;
+                        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client.client_fd, &ev_tmp);
+                    }
+                    else if (evts & EPOLLIN)
+                    {
+                        // CGI output ready to read
+                        handleCgiRead(client, epoll_fd);
+                    }
+                    else if (evts & EPOLLOUT)
+                    {
+                        // CGI input ready to write
+                        handleCgiWrite(client, epoll_fd);
+                    }
+                }
                 continue;
             }
             

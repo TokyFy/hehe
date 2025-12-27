@@ -94,6 +94,7 @@ Client &Client::operator=(Client const &to_what)
         request = to_what.request;
         response = to_what.response;
         server_ptr = to_what.server_ptr;
+        cgi = to_what.cgi;
     }
     return (*this);
 }
@@ -169,7 +170,7 @@ void Client::error()
 {
     std::string errorPath = server_ptr->getErrorPage(response.statusCode);
 
-    if(errorPath.size() > 0)
+    if(errorPath.size() > 0 && access(errorPath.c_str(), F_OK) == 0)
     {
         redirect(errorPath);
         return;
