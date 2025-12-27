@@ -95,11 +95,6 @@ char** setupEnv(Client &client, HttpServer &server, std::string &script_path)
     return vectorToCharArray(env);
 }
 
-static bool setNonBlocking(int fd)
-{
-    return fcntl(fd, F_SETFL, O_NONBLOCK) != -1;
-}
-
 bool startCgi(Client &client, HttpServer &server, int epoll_fd)
 {
     // Use rawPath for location matching, path for actual file
@@ -146,14 +141,15 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     int pipeIn[2] = {-1, -1};
     int pipeOut[2] = {-1, -1};
     
-    if (pipe(pipeIn) == -1)
+    // Use pipe2 with O_NONBLOCK to avoid fcntl
+    if (pipe2(pipeIn, O_NONBLOCK) == -1)
     {
         freeCharArray(env);
         client.response.statusCode = 500;
         return false;
     }
     
-    if (pipe(pipeOut) == -1)
+    if (pipe2(pipeOut, O_NONBLOCK) == -1)
     {
         close(pipeIn[0]);
         close(pipeIn[1]);
@@ -207,16 +203,7 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     close(pipeIn[0]);
     close(pipeOut[1]);
     
-    // Set pipes to non-blocking
-    if (!setNonBlocking(pipeIn[1]) || !setNonBlocking(pipeOut[0]))
-    {
-        close(pipeIn[1]);
-        close(pipeOut[0]);
-        kill(pid, SIGKILL);
-        waitpid(pid, NULL, 0);
-        client.response.statusCode = 500;
-        return false;
-    }
+    // Pipes are already non-blocking (created with pipe2 O_NONBLOCK)
     
     // Setup CGI state
     client.cgi.active = true;

@@ -23,7 +23,6 @@
 #include <cerrno>
 #include <netinet/in.h>
 #include <iostream>
-#include <fcntl.h>
 
 
 HttpServer::HttpServer(int socket_fd)
@@ -114,7 +113,8 @@ void HttpServer::addLocation(Location& location)
 
 void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
 {
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    // Use SOCK_NONBLOCK to create non-blocking socket without fcntl
+    int server_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (server_fd == -1)
         throw std::runtime_error(std::string("socket failed: ") + strerror(errno));
 
@@ -125,12 +125,7 @@ void HttpServer::setToEppoll(int epoll_fd, struct epoll_event &events)
         throw std::runtime_error(std::string("setsockopt failed: ") + strerror(errno));
     }
 
-    // Set server socket to non-blocking
-    if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
-    {
-        close(server_fd);
-        throw std::runtime_error("fcntl failed");
-    }
+    // Socket is already non-blocking (created with SOCK_NONBLOCK)
 
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));

@@ -15,7 +15,6 @@
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <cerrno>
 #include <ctime>
 #include <csignal>
@@ -62,27 +61,19 @@ static void closeClient(int epoll_fd, std::map<int, Client> &clients, int client
     clients.erase(client_fd);
 }
 
-static bool setNonBlocking(int fd)
-{
-    return fcntl(fd, F_SETFL, O_NONBLOCK) != -1;
-}
-
 static void acceptNewClient(int server_fd, int epoll_fd, 
                             std::map<int, Client> &clients, 
                             HttpServer* server)
 {
-    int client_fd = accept(server_fd, NULL, NULL);
+    // Use accept4 with SOCK_NONBLOCK to avoid fcntl
+    int client_fd = accept4(server_fd, NULL, NULL, SOCK_NONBLOCK);
     if (client_fd < 0)
     {
         std::cerr << "accept() failed: " << strerror(errno) << std::endl;
         return;
     }
     
-    if (!setNonBlocking(client_fd))
-    {
-        close(client_fd);
-        return;
-    }
+    // Socket is already non-blocking (created with SOCK_NONBLOCK)
     
     Client client(client_fd, server_fd);
     client.setServerPtr(server);

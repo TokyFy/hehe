@@ -17,13 +17,11 @@
 #include <stdexcept>
 #include <string>
 #include <unistd.h>
-#include <fcntl.h>
 #include <string>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <cstddef>
 #include <cstring>
-#include <fcntl.h>
 #include <iostream>
 #include <sstream>
 #include <string>
