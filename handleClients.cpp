@@ -310,15 +310,10 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
         if (!client.request.multipart)
             client.response.uploadBody();
         
-        client.response.method = "GET";
-        client.response.mimeType = "html";
-        
-        std::string responsePage = (client.response.statusCode == 201) 
-            ? "./Post/201.html" : "./Post/200.html";
-        client.request.path = responsePage;
-        
-        if (!client.response.file.is_open())
-            client.response.openFile(client.request.path);
+        // Send simple status page for POST success
+        logRequest(client.response.statusCode, client.request.methodName, client.request.rawPath);
+        client.sendStatusPage();
+        return;
     }
     
     std::string response;

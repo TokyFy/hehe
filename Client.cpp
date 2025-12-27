@@ -172,15 +172,15 @@ void Client::redirect(const std::string& path)
     response.full = true;
 }
 
-void Client::error()
+void Client::sendStatusPage()
 {
-    std::string errorPath = server_ptr->getErrorPage(response.statusCode);
+    std::string pagePath = server_ptr->getErrorPage(response.statusCode);
     std::string html;
 
-    // Try to read custom error page
-    if(errorPath.size() > 0 && access(errorPath.c_str(), F_OK) == 0)
+    // Try to read custom page from config
+    if(pagePath.size() > 0 && access(pagePath.c_str(), F_OK) == 0)
     {
-        std::ifstream file(errorPath.c_str());
+        std::ifstream file(pagePath.c_str());
         if (file.is_open())
         {
             std::stringstream buffer;
@@ -190,31 +190,42 @@ void Client::error()
         }
     }
     
-    // Fallback to default error page if custom page couldn't be read
+    // Fallback to default page
     if (html.empty())
     {
         std::stringstream defaultHtml;
         defaultHtml << "<html><head>";
-        defaultHtml << "<title>Error</title>";
-        defaultHtml << "<style> body { font-family: monospace; line-height: 1.2em; } </style>";
+        defaultHtml << "<title>" << response.statusCode << " " << response.getStatusMessage() << "</title>";
+        defaultHtml << "<style> body { font-family: monospace; text-align: center; margin-top: 50px; } </style>";
         defaultHtml << "</head><body>";
-        defaultHtml << "<h4>ERROR "<< itos(response.statusCode) << "</h4><hr>" << "<p>" + response.getStatusMessage() + "</p>";
+        defaultHtml << "<h1>" << itos(response.statusCode) << " - " << response.getStatusMessage() << "</h1>";
+        if (response.statusCode >= 400)
+            defaultHtml << "<p>An error occurred.</p>";
+        else if (response.statusCode == 201)
+            defaultHtml << "<p>Resource created successfully.</p>";
+        else if (response.statusCode == 200)
+            defaultHtml << "<p>Request completed successfully.</p>";
         defaultHtml << "</body></html>";
         html = defaultHtml.str();
     }
 
-    std::stringstream error;
+    std::stringstream resp;
     
-    error << "HTTP/1.1 " << itos(response.statusCode) << " " << response.getStatusMessage() << "\r\n";
-    error << "Content-Type: text/html\r\n";
-    error << "Content-Length: " << html.size() << "\r\n";
-    error << "Connection: close\r\n";
-    error << "\r\n";
-    error << html;
+    resp << "HTTP/1.1 " << itos(response.statusCode) << " " << response.getStatusMessage() << "\r\n";
+    resp << "Content-Type: text/html\r\n";
+    resp << "Content-Length: " << html.size() << "\r\n";
+    resp << "Connection: close\r\n";
+    resp << "\r\n";
+    resp << html;
    
-    std::string res = error.str();
+    std::string res = resp.str();
     send(client_fd, res.c_str(), res.size() , MSG_NOSIGNAL);
     response.full = true;     
 
     return;
+}
+
+void Client::error()
+{
+    sendStatusPage();
 }

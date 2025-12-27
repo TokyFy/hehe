@@ -76,6 +76,7 @@ class Client
         int     checkPath(void);
         void    setServerPtr(HttpServer* ptr);
         void    redirect(const std::string& path);
+        void    sendStatusPage();
         void    error();
 };
 
