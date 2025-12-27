@@ -23,7 +23,7 @@ bool        isValidMethod(std::string str);
 std::string intToString(int number);
 FILE_TYPE   mime(const std::string& str);
 std::string replaceFirstOccurrence(const std::string &originalString, const std::string &target, const std::string &replacement);
-std::string indexof(Location& location , std::string path);
+std::string indexof(Location& location, std::string path, std::string urlPath);
 std::string itos(int n);
 
 #endif

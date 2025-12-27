@@ -126,7 +126,7 @@ std::string replaceFirstOccurrence(const std::string &originalString, const std:
     return resultString;
 }
 
-std::string indexof(Location& location, std::string path)
+std::string indexof(Location& location, std::string path, std::string urlPath)
 {
     (void)(location);
     DIR *folder = opendir(path.c_str());
@@ -144,14 +144,28 @@ std::string indexof(Location& location, std::string path)
             "Not Found";
     }
 
+    // Remove trailing slash from urlPath for proper link construction
+    if (urlPath.size() > 1 && urlPath[urlPath.size() - 1] == '/')
+        urlPath = urlPath.substr(0, urlPath.size() - 1);
+
     struct dirent *entry;
     std::stringstream html;
 
     html << "<html><head>";
-    html << "<title>Index of</title>";
+    html << "<title>Index of " << urlPath << "</title>";
     html << "<style> body { font-family: monospace; line-height: 1.2em; } </style>";
     html << "</head><body>";
-    html << "<h3>Index of " << path << "</h3><hr>";
+    html << "<h3>Index of " << urlPath << "</h3><hr>";
+
+    // Add . and .. entries first
+    html << "<p><a href=\"" << urlPath << "/\">.</a></p>";
+    if (urlPath != "/" && !urlPath.empty())
+    {
+        std::string parentPath = urlPath.substr(0, urlPath.rfind('/'));
+        if (parentPath.empty())
+            parentPath = "/";
+        html << "<p><a href=\"" << parentPath << "\">..</a></p>";
+    }
 
     while ((entry = readdir(folder)) != NULL)
     {
@@ -160,7 +174,7 @@ std::string indexof(Location& location, std::string path)
             continue;
 
         html << "<p><a href=\""
-             << (path == "/" ? "" : path) << "/"
+             << urlPath << "/"
              << entry->d_name << "\">"
              << entry->d_name
              << "</a></p>";

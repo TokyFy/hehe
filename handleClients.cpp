@@ -365,7 +365,7 @@ static void sendDirectoryListing(Client &client, Location &location)
 {
     logRequest(200, client.request.methodName, client.request.rawPath);
     
-    std::string content = indexof(location, client.request.path);
+    std::string content = indexof(location, client.request.path, client.request.rawPath);
     send(client.client_fd, content.c_str(), content.size(), MSG_NOSIGNAL);
     client.response.full = true;
 }
