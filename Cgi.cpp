@@ -24,7 +24,6 @@
 
 static const int CGI_TIMEOUT_SEC = 30;
 
-// Global map: pipe fd -> client fd
 std::map<int, int> g_cgiPipeToClient;
 
 char** vectorToCharArray(const std::vector<std::string> &vec)
@@ -201,8 +200,6 @@ bool startCgi(Client &client, HttpServer &server, int epoll_fd)
     freeCharArray(env);
     close(pipeIn[0]);
     close(pipeOut[1]);
-    
-    // Pipes are already non-blocking (created with pipe2 O_NONBLOCK)
     
     // Setup CGI state
     client.cgi.active = true;

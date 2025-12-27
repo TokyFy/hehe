@@ -64,7 +64,7 @@ TokenType get_token_type(std::string &token)
         case 0x0C3E3CBCu    : return TOKEN_ALLOW_METHODS;
         case 0x74F60DEFu    : return TOKEN_CLIENT_MAX_BODY_SIZE;
         case 0xCE040E01u    : return TOKEN_UPLOAD;
-        case 0x1BCFD7DCu    : return TOKEN_REDIRECT;
+        case 0xC84E3D30u    : return TOKEN_REDIRECT;
         
         default             : return TOKEN_WORDS;
     }
