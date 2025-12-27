@@ -33,7 +33,7 @@ HttpResponse::~HttpResponse(void)
 
 std::string HttpResponse::createHeader(void)
 {
-    return ("HTTP/1.0 " + intToString(statusCode) + getStatusMessage());
+    return ("HTTP/1.0 " + intToString(statusCode) + " " + getStatusMessage() + "\r\n");
 }
 
 std::string HttpResponse::getStatusMessage(void)
@@ -41,45 +41,47 @@ std::string HttpResponse::getStatusMessage(void)
     switch (statusCode)
     {
         case 200:
-            return (" OK\r\n");
+            return "OK";
         case 201:
-            return (" Created\r\n");
+            return "Created";
         case 202:
-            return (" Accepted\r\n");
+            return "Accepted";
         case 204:
-            return (" No content\r\n");
+            return "No Content";
         case 301:
-            return (" Moved Permanently\r\n");
+            return "Moved Permanently";
         case 302:
-            return (" Moved Temporarily\r\n");
+            return "Moved Temporarily";
         case 304:
-            return (" Not Modified\r\n");
+            return "Not Modified";
         case 400:
-            return (" Bad Request\r\n");
+            return "Bad Request";
         case 401:
-            return (" Unauthorized\r\n");
+            return "Unauthorized";
         case 403:
-            return (" Forbidden\r\n");
+            return "Forbidden";
         case 404:
-            return (" Not Found\r\n");
+            return "Not Found";
         case 405:
-            return (" METHOD NOT ALLOWED\r\n");
+            return "Method Not Allowed";
         case 409:
-            return (" CONFLICT\r\n");
+            return "Conflict";
         case 411:
-            return (" Length Required\r\n");
+            return "Length Required";
         case 413:
-            return (" Request Entity Too Large\r\n");
+            return "Request Entity Too Large";
         case 500:
-            return (" Internal Server Error\r\n");
+            return "Internal Server Error";
         case 501:
-            return (" Not Implemented\r\n");
+            return "Not Implemented";
         case 502:
-            return (" Bad Gateway\r\n");
+            return "Bad Gateway";
         case 503:
-            return (" Service Unavailable\r\n");
+            return "Service Unavailable";
+        case 504:
+            return "Gateway Timeout";
         default:
-            return (" HEHEHEHEHE\r\n");
+            return "Unknown Error";
     }        
 }
 
