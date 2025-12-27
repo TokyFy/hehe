@@ -126,6 +126,18 @@ std::string replaceFirstOccurrence(const std::string &originalString, const std:
     return resultString;
 }
 
+bool endsWith(const std::string& str, const std::string& suffix)
+{
+    if (suffix.size() > str.size())
+        return false;
+
+    return str.compare(
+        str.size() - suffix.size(),
+        suffix.size(),
+        suffix
+    ) == 0;
+}
+
 std::string indexof(Location& location, std::string path, std::string urlPath)
 {
     (void)(location);

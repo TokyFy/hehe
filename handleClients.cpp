@@ -12,6 +12,7 @@
 
 #include "handleClients.hpp"
 #include "Cgi.hpp"
+#include "utils.hpp"
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -423,7 +424,8 @@ static void processResponse(std::map<int, Client> &clients, Client &client,
     {
         if (!location.getAutoIndex())
         {
-            client.redirect(client.request.rawPath + location.getIndex());
+            std::string suffix = (endsWith(client.request.rawPath, "/") ? "" : "/");
+            client.redirect(client.request.rawPath + suffix + location.getIndex());
             return;
         }
         
